@@ -12,6 +12,9 @@ final class Injector {
 
     private let source = CGEventSource(stateID: .hidSystemState)
     private var buttonsDown = Set<UInt8>()
+    private var buttonDownTime: [UInt8: TimeInterval] = [:]
+    /// Games poll input once per frame; a press shorter than a frame can be missed entirely.
+    private let minimumPress: TimeInterval = 0.03
     private var lastClickTime: [UInt8: TimeInterval] = [:]
     private var lastClickPoint = CGPoint.zero
     private var clickCount: [UInt8: Int64] = [:]
@@ -57,6 +60,19 @@ final class Injector {
     // MARK: Buttons
 
     func button(_ b: UInt8, down: Bool) {
+        if !down, let since = buttonDownTime[b] {
+            let held = ProcessInfo.processInfo.systemUptime - since
+            if held < minimumPress {
+                DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + (minimumPress - held)) {
+                    self.post(button: b, down: false)
+                }
+                return
+            }
+        }
+        post(button: b, down: down)
+    }
+
+    private func post(button b: UInt8, down: Bool) {
         let p = currentLocation()
         let type: CGEventType
         switch (b, down) {
@@ -77,8 +93,10 @@ final class Injector {
             lastClickTime[b] = now
             lastClickPoint = p
             buttonsDown.insert(b)
+            buttonDownTime[b] = now
         } else {
             buttonsDown.remove(b)
+            buttonDownTime[b] = nil
         }
 
         guard let e = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: p,

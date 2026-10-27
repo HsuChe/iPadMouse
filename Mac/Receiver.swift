@@ -16,6 +16,23 @@ final class Receiver {
         self.injector = injector
     }
 
+    /// Button and key events are appended to ~/Library/Logs/iPadMouse.log for debugging.
+    private lazy var logHandle: FileHandle? = {
+        let url = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/iPadMouse.log")
+        if !FileManager.default.fileExists(atPath: url.path) {
+            FileManager.default.createFile(atPath: url.path, contents: nil)
+        }
+        let handle = try? FileHandle(forWritingTo: url)
+        handle?.seekToEndOfFile()
+        return handle
+    }()
+
+    private func log(_ text: String) {
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        logHandle?.write("\(stamp) \(text)\n".data(using: .utf8) ?? Data())
+    }
+
     func start() {
         let params = NWParameters.udp
         params.includePeerToPeer = true
@@ -104,14 +121,17 @@ final class Receiver {
         case .moveRelative:
             injector.moveRelative(dx: CGFloat(p.dx), dy: CGFloat(p.dy))
         case .buttonDown:
+            log("buttonDown \(p.button) (\(MouseButton(rawValue: p.button).map { "\($0)" } ?? "?"))")
             injector.button(p.button, down: true)
         case .buttonUp:
+            log("buttonUp \(p.button)")
             injector.button(p.button, down: false)
         case .scroll:
             if let phase = ScrollPhase(rawValue: p.flags) {
                 injector.scroll(dx: p.dx, dy: p.dy, phase: phase)
             }
         case .key:
+            log("key \(p.button) mods \(p.flags)")
             injector.key(code: UInt16(p.button), modifiers: KeyModifiers(rawValue: p.flags))
         }
     }

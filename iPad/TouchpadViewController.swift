@@ -644,7 +644,11 @@ extension TouchpadViewController: UIPencilInteractionDelegate {
 
     func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze) {
         guard squeeze.phase == .ended else { return }
-        click(.back)
+        if mode == .training {
+            trainer.handle(.tap(fingers: 3, at: lastPencilPoint))                 // SUMM prompt
+        } else {
+            click(.back)
+        }
     }
 }
 
