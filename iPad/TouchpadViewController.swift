@@ -131,6 +131,10 @@ final class TouchpadViewController: UIViewController {
     /// Keeps ProMotion at 120 Hz: input events are delivered in step with the display, and a static
     /// black screen would otherwise let the panel idle down to 24 Hz and starve the pointer stream.
     private var refreshLink: CADisplayLink?
+    // Live rate readout (per second): display-link ticks, hover samples, finger moves.
+    private var rateTicks = 0, rateHover = 0, rateFinger = 0
+    private var rateWindowStart: TimeInterval = 0
+    private var rateText = ""
     /// Hover samples arrive at up to 240 Hz; the Mac display only needs 120.
     private let hoverInterval: TimeInterval = 1.0 / 120.0
     private var lastOffset = TouchpadView.center
@@ -244,11 +248,12 @@ final class TouchpadViewController: UIViewController {
         setupLabel.textAlignment = .center
         setupLabel.text = "No Mac running iPad Mouse was found.\n\n" +
             "The Mac needs the companion app once; after that it starts at login and this iPad connects automatically.\n\n" +
-            "Scan to get it, then make sure the Mac and iPad share a Wi-Fi network or a USB-C cable."
+            "Scan to download it. On first launch macOS will say it can't verify the app: open System Settings › Privacy & Security and click Open Anyway. " +
+            "Then make sure the Mac and iPad share a Wi-Fi network or a USB-C cable."
         setupLabel.translatesAutoresizingMaskIntoConstraints = false
         setupCard.addSubview(setupLabel)
 
-        setupQR.image = Self.qrImage(for: "https://github.com/HsuChe/iPadMouse")
+        setupQR.image = Self.qrImage(for: "https://github.com/HsuChe/iPadMouse/releases/latest")
         setupQR.contentMode = .scaleAspectFit
         setupQR.translatesAutoresizingMaskIntoConstraints = false
         setupCard.addSubview(setupQR)
@@ -358,8 +363,18 @@ final class TouchpadViewController: UIViewController {
         link.start()
     }
 
-    /// Intentionally does nothing; the display link's existence is what holds the refresh rate.
-    @objc private func refreshTick() {}
+    /// Holds the refresh rate and counts frames for the HUD readout.
+    @objc private func refreshTick() {
+        rateTicks += 1
+        let now = CACurrentMediaTime()
+        if rateWindowStart == 0 { rateWindowStart = now }
+        if now - rateWindowStart >= 1 {
+            rateText = "display \(rateTicks) Hz · hover \(rateHover)/s · finger \(rateFinger)/s"
+            rateTicks = 0; rateHover = 0; rateFinger = 0
+            rateWindowStart = now
+            refreshHUD()
+        }
+    }
 
     // MARK: Mapping
 
@@ -435,6 +450,7 @@ final class TouchpadViewController: UIViewController {
     @objc private func handleHover(_ g: UIHoverGestureRecognizer) {
         guard g.state == .began || g.state == .changed else { return }
         lastPencilPoint = g.location(in: view)
+        rateHover += 1
         guard mode != .training else { return }
         let now = CACurrentMediaTime()
         guard now - lastHoverSent >= hoverInterval else { return }
@@ -535,6 +551,7 @@ final class TouchpadViewController: UIViewController {
             }
 
         case .moved:
+            rateFinger += 1
             for t in touches where leagueActive.contains(t) {
                 leaguePoints[t] = t.location(in: view)
             }
@@ -619,6 +636,7 @@ final class TouchpadViewController: UIViewController {
 
     @objc private func handleOneFingerPan(_ g: UIPanGestureRecognizer) {
         guard g.state == .changed else { return }
+        rateFinger += 1
         let t = g.translation(in: view)
         g.setTranslation(.zero, in: view)
         link.send(Packet(kind: .moveRelative,
@@ -731,7 +749,7 @@ final class TouchpadViewController: UIViewController {
         case .training:
             hint = "Training: nothing is sent to the Mac. Pick a drill below, press Start, hit the prompts on the beat."
         }
-        hud.text = (mode == .training ? "" : status + "\n") + hint
+        hud.text = (mode == .training ? "" : status + "\n") + hint + (rateText.isEmpty ? "" : "\n" + rateText)
     }
 }
 

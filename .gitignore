@@ -4,3 +4,4 @@ DerivedData/
 build/
 tools/xcodegen/
 .DS_Store
+dist/*.zip
