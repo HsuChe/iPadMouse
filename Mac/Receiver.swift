@@ -3,6 +3,7 @@
 
 import Foundation
 import Network
+import Darwin
 
 final class Receiver {
     var onStatus: ((String) -> Void)?
@@ -123,6 +124,33 @@ final class Receiver {
         let size = injector.displaySize
         let reply = Packet(kind: .config, x: Float(size.width), y: Float(size.height))
         connection.send(content: reply.encoded(), completion: .idempotent)
+        // Tell the iPad how to reach us directly over any wired (USB) link, bypassing Bonjour.
+        if let port = listener?.port?.rawValue {
+            for address in Self.wiredLinkLocalAddresses() {
+                connection.send(content: Packet.peerAddress(ipv6: address, port: port), completion: .idempotent)
+            }
+        }
+    }
+
+    /// Link-local IPv6 addresses on Ethernet-like interfaces other than Wi-Fi (en0): the iPad USB link shows up here.
+    static func wiredLinkLocalAddresses() -> [[UInt8]] {
+        var result: [[UInt8]] = []
+        var list: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&list) == 0, let first = list else { return result }
+        defer { freeifaddrs(list) }
+        var cursor: UnsafeMutablePointer<ifaddrs>? = first
+        while let ifa = cursor {
+            cursor = ifa.pointee.ifa_next
+            guard let addr = ifa.pointee.ifa_addr, addr.pointee.sa_family == UInt8(AF_INET6) else { continue }
+            let name = String(cString: ifa.pointee.ifa_name)
+            guard name.hasPrefix("en"), name != "en0" else { continue }
+            var sin6 = sockaddr_in6()
+            memcpy(&sin6, addr, Int(MemoryLayout<sockaddr_in6>.size))
+            let bytes = withUnsafeBytes(of: &sin6.sin6_addr) { Array($0) }
+            guard bytes.count == 16, bytes[0] == 0xfe, (bytes[1] & 0xc0) == 0x80 else { continue }
+            result.append(bytes)
+        }
+        return result
     }
 
     private func handle(_ p: Packet, from connection: NWConnection) {
@@ -132,7 +160,7 @@ final class Receiver {
             sendConfig(to: connection)
             onStatus?("iPad connected: \(connection.endpoint)")
             NSLog("iPadMouse hello from \(connection.endpoint)")
-        case .config:
+        case .config, .peerAddress:
             break
         case .moveAbsolute:
             injector.moveAbsolute(nx: p.x, ny: p.y)

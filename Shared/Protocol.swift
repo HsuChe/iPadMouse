@@ -14,6 +14,7 @@ enum PacketKind: UInt8 {
     case buttonUp = 5
     case scroll = 6         // dx,dy = finger travel in points, flags = ScrollPhase
     case key = 7            // button = virtual key code, flags = KeyModifiers
+    case peerAddress = 8    // Mac -> iPad: bytes 1-2 = port (big endian), bytes 4-19 = a link-local IPv6 of the Mac
 }
 
 /// Values match CGMouseButton numbering, so the Mac can pass them straight through.
@@ -70,6 +71,22 @@ struct Packet {
 }
 
 extension Packet {
+    /// Raw layout for `.peerAddress`: [8, portHi, portLo, 0, 16 bytes of IPv6].
+    static func peerAddress(ipv6: [UInt8], port: UInt16) -> Data {
+        var b = [UInt8](repeating: 0, count: byteCount)
+        b[0] = PacketKind.peerAddress.rawValue
+        b[1] = UInt8(port >> 8)
+        b[2] = UInt8(port & 0xff)
+        for i in 0 ..< min(16, ipv6.count) { b[4 + i] = ipv6[i] }
+        return Data(b)
+    }
+
+    static func parsePeerAddress(_ data: Data) -> (ipv6: [UInt8], port: UInt16)? {
+        let b = [UInt8](data)
+        guard b.count >= byteCount, b[0] == PacketKind.peerAddress.rawValue else { return nil }
+        return (Array(b[4 ..< 20]), UInt16(b[1]) << 8 | UInt16(b[2]))
+    }
+
     init?(data: Data) {
         let b = [UInt8](data)
         guard b.count >= Packet.byteCount, let kind = PacketKind(rawValue: b[0]) else { return nil }
