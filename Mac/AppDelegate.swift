@@ -3,6 +3,7 @@
 
 import AppKit
 import ApplicationServices
+import ServiceManagement
 
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -11,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var receiver = Receiver(injector: injector)
     private let statusMenuItem = NSMenuItem(title: "Starting…", action: nil, keyEquivalent: "")
     private let naturalItem = NSMenuItem(title: "Natural Scrolling", action: #selector(toggleNatural), keyEquivalent: "")
+    private let loginItem = NSMenuItem(title: "Start at Login", action: #selector(toggleLogin), keyEquivalent: "")
     private let displayMenu = NSMenu()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -26,6 +28,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         naturalItem.target = self
         naturalItem.state = injector.naturalScrolling ? .on : .off
         menu.addItem(naturalItem)
+        loginItem.target = self
+        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        menu.addItem(loginItem)
         let forgetItem = NSMenuItem(title: "Forget Paired iPads", action: #selector(forgetDevices), keyEquivalent: "")
         forgetItem.target = self
         menu.addItem(forgetItem)
@@ -48,6 +53,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         receiver.start()
         ensureAccessibility()
+        registerAtLoginOnFirstRun()
+    }
+
+    /// Opt in to launch-at-login the first time the app runs, so the iPad connects without any clicks on the Mac.
+    private func registerAtLoginOnFirstRun() {
+        let key = "didOfferLogin"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        UserDefaults.standard.set(true, forKey: key)
+        try? SMAppService.mainApp.register()
+        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+    }
+
+    @objc private func toggleLogin() {
+        if SMAppService.mainApp.status == .enabled {
+            try? SMAppService.mainApp.unregister()
+        } else {
+            try? SMAppService.mainApp.register()
+        }
+        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
     }
 
     /// First contact from an iPad: ask the user before accepting any input from it.

@@ -15,6 +15,7 @@
 
 import UIKit
 import QuartzCore
+import CoreImage
 
 enum PadMode: String {
     case desktop, league, training
@@ -86,6 +87,10 @@ final class TouchpadViewController: UIViewController {
     private let areaButton = UIButton(type: .system)
     private let anchorButton = UIButton(type: .system)
     private let trainer = TrainingView()
+    private let setupCard = UIView()
+    private let setupLabel = UILabel()
+    private let setupQR = UIImageView()
+    private var macsVisible = 0
     private var pinch: UIPinchGestureRecognizer!
     /// Recognizers that only make sense in Desktop mode; League handles fingers itself.
     private var desktopRecognizers: [UIGestureRecognizer] = []
@@ -166,6 +171,8 @@ final class TouchpadViewController: UIViewController {
         trainer.isHidden = mode != .training
         view.addSubview(trainer)
 
+        setupSetupCard()
+
         hud.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         hud.textColor = UIColor(white: 0.45, alpha: 1)
         hud.textAlignment = .center
@@ -201,6 +208,60 @@ final class TouchpadViewController: UIViewController {
             anchorButton.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 16),
         ])
         refreshHUD()
+    }
+
+    /// Shown while no Mac is visible: the Mac side needs a one-time install, and this is how to get it.
+    private func setupSetupCard() {
+        setupCard.backgroundColor = UIColor(white: 0.1, alpha: 1)
+        setupCard.layer.cornerRadius = 16
+        setupCard.isUserInteractionEnabled = false
+        setupCard.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(setupCard)
+
+        setupLabel.font = .systemFont(ofSize: 16)
+        setupLabel.textColor = UIColor(white: 0.85, alpha: 1)
+        setupLabel.numberOfLines = 0
+        setupLabel.textAlignment = .center
+        setupLabel.text = "No Mac running iPad Mouse was found.\n\n" +
+            "The Mac needs the companion app once; after that it starts at login and this iPad connects automatically.\n\n" +
+            "Scan to get it, then make sure the Mac and iPad share a Wi-Fi network or a USB-C cable."
+        setupLabel.translatesAutoresizingMaskIntoConstraints = false
+        setupCard.addSubview(setupLabel)
+
+        setupQR.image = Self.qrImage(for: "https://github.com/HsuChe/iPadMouse")
+        setupQR.contentMode = .scaleAspectFit
+        setupQR.translatesAutoresizingMaskIntoConstraints = false
+        setupCard.addSubview(setupQR)
+
+        NSLayoutConstraint.activate([
+            setupCard.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            setupCard.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            setupCard.widthAnchor.constraint(equalToConstant: 420),
+            setupLabel.topAnchor.constraint(equalTo: setupCard.topAnchor, constant: 24),
+            setupLabel.leadingAnchor.constraint(equalTo: setupCard.leadingAnchor, constant: 24),
+            setupLabel.trailingAnchor.constraint(equalTo: setupCard.trailingAnchor, constant: -24),
+            setupQR.topAnchor.constraint(equalTo: setupLabel.bottomAnchor, constant: 20),
+            setupQR.centerXAnchor.constraint(equalTo: setupCard.centerXAnchor),
+            setupQR.widthAnchor.constraint(equalToConstant: 180),
+            setupQR.heightAnchor.constraint(equalToConstant: 180),
+            setupQR.bottomAnchor.constraint(equalTo: setupCard.bottomAnchor, constant: -24),
+        ])
+        refreshSetupCard()
+    }
+
+    private func refreshSetupCard() {
+        setupCard.isHidden = macsVisible > 0 || mode == .training || dimmed
+    }
+
+    private static func qrImage(for text: String) -> UIImage? {
+        guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(text.data(using: .utf8), forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let output = filter.outputImage else { return nil }
+        let scaled = output.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
+        // White modules on the dark card.
+        let inverted = scaled.applyingFilter("CIColorInvert").applyingFilter("CIMaskToAlpha")
+        return UIImage(ciImage: inverted)
     }
 
     private func configure(_ button: UIButton, title: String, action: Selector) {
@@ -250,6 +311,7 @@ final class TouchpadViewController: UIViewController {
         leaguePoints.removeAll()
         trainer.isHidden = mode != .training
         if mode != .training { trainer.stop() }
+        refreshSetupCard()
     }
 
     private func setupLink() {
@@ -262,6 +324,8 @@ final class TouchpadViewController: UIViewController {
         link.onMacsChanged = { [weak self] macs in
             DispatchQueue.main.async {
                 self?.macsButton.setTitle(macs.isEmpty ? "Macs (none)" : "Macs (\(macs.count))", for: .normal)
+                self?.macsVisible = macs.count
+                self?.refreshSetupCard()
             }
         }
         link.onConfig = { [weak self] size in
@@ -324,11 +388,14 @@ final class TouchpadViewController: UIViewController {
         anchorButton.setTitle("Anchor: \(Self.anchorNames[min(max(areaAnchor, 0), Self.anchorNames.count - 1)])", for: .normal)
     }
 
+    private let clockStart = CACurrentMediaTime()
+
     private func sendAbsolute(_ p: CGPoint) {
         guard activeRect.width > 0 else { return }
         let nx = min(max((p.x - activeRect.minX) / activeRect.width, 0), 1)
         let ny = min(max((p.y - activeRect.minY) / activeRect.height, 0), 1)
-        link.send(Packet(kind: .moveAbsolute, x: Float(nx), y: Float(ny)))
+        // dx carries the send time (seconds since launch) so the Mac can measure delivery jitter.
+        link.send(Packet(kind: .moveAbsolute, x: Float(nx), y: Float(ny), dx: Float(CACurrentMediaTime() - clockStart)))
     }
 
     private func click(_ button: MouseButton) {
@@ -563,6 +630,7 @@ final class TouchpadViewController: UIViewController {
         anchorButton.alpha = dimmed ? 0.02 : 1
         dimButton.alpha = dimmed ? 0.1 : 1
         macsButton.alpha = dimmed ? 0.02 : 1
+        refreshSetupCard()
     }
 
     @objc private func appWillResignActive() {

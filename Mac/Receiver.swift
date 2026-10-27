@@ -17,6 +17,40 @@ final class Receiver {
     private var lastPacket = Date()
     private var watchdog: DispatchSourceTimer?
 
+    // Timing stats for move packets, logged every 2 s while moves arrive.
+    private var statCount = 0
+    private var statLastArrival: Double = 0
+    private var statMaxGap: Double = 0
+    private var statOffsetMin = Double.greatestFiniteMagnitude
+    private var statOffsetMax = -Double.greatestFiniteMagnitude
+    private var statWindowStart: Double = 0
+
+    private func recordMove(sentStamp: Float) {
+        let now = CFAbsoluteTimeGetCurrent()
+        if statCount > 0 {
+            statMaxGap = max(statMaxGap, now - statLastArrival)
+        } else {
+            statWindowStart = now
+        }
+        statLastArrival = now
+        statCount += 1
+        if sentStamp > 0 {
+            let offset = now - Double(sentStamp)       // clocks differ; only the spread matters
+            statOffsetMin = min(statOffsetMin, offset)
+            statOffsetMax = max(statOffsetMax, offset)
+        }
+        if now - statWindowStart >= 2 {
+            let seconds = now - statWindowStart
+            let jitter = statOffsetMax >= statOffsetMin ? (statOffsetMax - statOffsetMin) * 1000 : 0
+            log(String(format: "moves: %d in %.1fs (%.0f/s), max gap %.1f ms, delivery jitter %.1f ms",
+                       statCount, seconds, Double(statCount) / seconds, statMaxGap * 1000, jitter))
+            statCount = 0
+            statMaxGap = 0
+            statOffsetMin = Double.greatestFiniteMagnitude
+            statOffsetMax = -Double.greatestFiniteMagnitude
+        }
+    }
+
     // Pairing: approved device tokens persist; a connection (one UDP flow) is authorized once its hello carries one.
     private var approvedTokens: Set<Data> = Set((UserDefaults.standard.array(forKey: "approvedTokens") as? [Data]) ?? [])
     private var deniedTokens = Set<Data>()
@@ -226,6 +260,7 @@ final class Receiver {
         case .config, .peerAddress:
             break
         case .moveAbsolute:
+            recordMove(sentStamp: p.dx)
             injector.moveAbsolute(nx: p.x, ny: p.y)
         case .moveRelative:
             injector.moveRelative(dx: CGFloat(p.dx), dy: CGFloat(p.dy))
