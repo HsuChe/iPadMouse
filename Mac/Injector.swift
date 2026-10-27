@@ -20,6 +20,12 @@ final class Injector {
     private var clickCount: [UInt8: Int64] = [:]
 
     var displaySize: CGSize { CGDisplayBounds(targetDisplay).size }
+    var anyButtonDown: Bool { !buttonsDown.isEmpty }
+
+    /// Safety: release every held button (link dropped mid-press, app quitting).
+    func releaseAll() {
+        for b in buttonsDown { post(button: b, down: false) }
+    }
 
     private func currentLocation() -> CGPoint {
         CGEvent(source: nil)?.location ?? .zero

@@ -11,6 +11,8 @@ final class Receiver {
     private let queue = DispatchQueue(label: "ipadmouse.receiver", qos: .userInteractive)
     private var listener: NWListener?
     private var connections: [NWConnection] = []
+    private var lastPacket = Date()
+    private var watchdog: DispatchSourceTimer?
 
     init(injector: Injector) {
         self.injector = injector
@@ -65,6 +67,21 @@ final class Receiver {
         }
         listener.start(queue: queue)
         self.listener = listener
+
+        // If packets stop while a button is held (cable pulled, iPad app backgrounded), let go.
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 0.5, repeating: 0.5)
+        timer.setEventHandler { [weak self] in
+            guard let self, self.injector.anyButtonDown, Date().timeIntervalSince(self.lastPacket) > 1.0 else { return }
+            self.log("watchdog: releasing held buttons after link silence")
+            self.injector.releaseAll()
+        }
+        timer.resume()
+        watchdog = timer
+    }
+
+    func releaseAll() {
+        queue.async { self.injector.releaseAll() }
     }
 
     /// Re-send the display size to every iPad, e.g. after the target display changes.
@@ -109,6 +126,7 @@ final class Receiver {
     }
 
     private func handle(_ p: Packet, from connection: NWConnection) {
+        lastPacket = Date()
         switch p.kind {
         case .hello:
             sendConfig(to: connection)

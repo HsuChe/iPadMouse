@@ -109,6 +109,9 @@ final class TouchpadViewController: UIViewController {
     /// Which button the current Pencil touch is holding (left on Desktop, right = move in League).
     private var pencilButton: MouseButton = .left
     private var lastPencilPoint = CGPoint.zero
+    private var lastHoverSent: TimeInterval = 0
+    /// Hover samples arrive at up to 240 Hz; the Mac display only needs 120.
+    private let hoverInterval: TimeInterval = 1.0 / 120.0
     private var lastOffset = TouchpadView.center
     private var suppressScroll = false
     private var inMomentum = false
@@ -334,6 +337,9 @@ final class TouchpadViewController: UIViewController {
         guard g.state == .began || g.state == .changed else { return }
         lastPencilPoint = g.location(in: view)
         guard mode != .training else { return }
+        let now = CACurrentMediaTime()
+        guard now - lastHoverSent >= hoverInterval else { return }
+        lastHoverSent = now
         sendAbsolute(lastPencilPoint)
     }
 
@@ -551,6 +557,15 @@ final class TouchpadViewController: UIViewController {
 
     @objc private func appWillResignActive() {
         if dimmed { screen.brightness = savedBrightness }
+        // Never leave a button held on the Mac when the app goes to the background.
+        if pencilDownSent, !pencilConsumed {
+            link.send(Packet(kind: .buttonUp, button: pencilButton.rawValue))
+        }
+        pencilDownWork?.cancel()
+        pencilTouch = nil
+        pencilDownSent = false
+        leagueActive.removeAll()
+        leaguePoints.removeAll()
     }
 
     @objc private func appDidBecomeActive() {

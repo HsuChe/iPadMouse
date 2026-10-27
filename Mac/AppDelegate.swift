@@ -44,6 +44,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ensureAccessibility()
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        injector.releaseAll()
+    }
+
     /// CGEvent posting is silently ignored until the user grants Accessibility access.
     private func ensureAccessibility() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
