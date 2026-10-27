@@ -7,8 +7,9 @@ import AudioToolbox
 
 /// A discrete input produced by the League finger layout (or the Pencil).
 enum FingerGesture {
-    case aim(CGPoint)
+    case move(dx: CGFloat, dy: CGFloat)       // relative trackpad motion
     case tap(fingers: Int, at: CGPoint)
+    case press(at: CGPoint)                   // firm press: finger stays put, contact patch grows
     case pencilTap(CGPoint)
 }
 
@@ -128,7 +129,7 @@ final class TrainingView: UIView {
             label.translatesAutoresizingMaskIntoConstraints = false
             addSubview(label)
         }
-        hint.text = "ATK = 2 fingers or Pencil barrel double-tap · MOVE = 1 finger or Pencil tip · SUMM = 3 · ITEM = 4"
+        hint.text = "ATK = firm press, 2 fingers or Pencil barrel double-tap · MOVE = 1-finger tap or Pencil tip · SUMM = 3 · ITEM = 4"
         NSLayoutConstraint.activate([
             drillButton.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -16),
             drillButton.centerXAnchor.constraint(equalTo: centerXAnchor, constant: -150),
@@ -201,8 +202,9 @@ final class TrainingView: UIView {
         let fingers: Int
         let point: CGPoint
         switch gesture {
-        case .aim: return
+        case .move: return
         case .tap(let n, let p): fingers = n; point = p
+        case .press(let p): fingers = 2; point = p          // a firm press counts as an attack
         case .pencilTap(let p): fingers = 1; point = p
         }
         // Nearest unjudged prompt in time that accepts this gesture.

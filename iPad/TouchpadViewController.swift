@@ -6,12 +6,12 @@
 //          click, squeeze = back (mouse 4), quick hard stab = back. Finger tap jumps the
 //          pointer to that spot and left-clicks; 1 drag = trackpad move; 2 drag = scroll
 //          with momentum; 2 tap = right click; 3 swipe = Spaces; pinch = Cmd +/-.
-// League:  one-handed finger layout. Finger down/held = pointer follows the finger
-//          (aim for skillshots, no click). Quick 1-finger tap = right click there (move).
-//          2-finger tap = left click at the centroid (attack-move). 3-finger tap =
-//          mouse 4 (summoner). 4-finger tap = mouse 5 (item). 2-finger drag still scrolls
-//          (camera zoom). Pencil: hover aims, touch = left click, squeeze = mouse 4,
-//          double-tap = mouse 5. Hard stab, 3-finger swipes and pinch are disabled.
+// League:  one-handed finger layout, trackpad style. 1-finger drag = move the pointer
+//          (relative). Quick tap = right click (move command). Firm press without moving =
+//          left click (attack-move / select). 2-finger tap = left click. 3-finger tap =
+//          mouse 4 (summoner). 4-finger tap = mouse 5 (item). 2-finger drag scrolls (camera
+//          zoom). Pencil: hover aims (absolute), tip tap = move, barrel double-tap =
+//          attack-move, squeeze = mouse 4. Hard stab, 3-finger swipes and pinch are disabled.
 
 import UIKit
 import QuartzCore
@@ -72,8 +72,11 @@ final class TouchpadViewController: UIViewController {
     private let tapMaxDuration: TimeInterval = 0.25
     /// League: multi-finger taps may take a little longer since fingers land and lift unevenly.
     private let multiTapMaxDuration: TimeInterval = 0.35
-    /// League: a finger that travels further than this is an aim-hold, not a tap.
+    /// League: a finger that travels further than this is a drag, not a tap or press.
     private let tapSlop: CGFloat = 12
+    /// Firm press: the contact patch must grow by this factor (and at least this many points) over its size at touch-down.
+    private let pressGrowthFactor: CGFloat = 1.35
+    private let pressGrowthMinimum: CGFloat = 3
 
     // MARK: Pieces
     private let link = Link()
@@ -102,6 +105,9 @@ final class TouchpadViewController: UIViewController {
     private var leagueStartPoint = CGPoint.zero
     private var leagueMaxFingers = 0
     private var leagueMoved = false
+    private var leagueLastPoint = CGPoint.zero
+    private var leagueStartRadius: CGFloat = 0
+    private var leaguePressFired = false
 
     // MARK: State
     private var macScreen = CGSize(width: 16, height: 10)
@@ -503,9 +509,10 @@ final class TouchpadViewController: UIViewController {
                 leaguePoints[t] = t.location(in: view)
             }
             leagueMaxFingers = max(leagueMaxFingers, leagueActive.count)
-            // A lone finger aims immediately: the pointer is where you touch.
             if leagueActive.count == 1, let t = touches.first {
-                dispatch(.aim(t.location(in: view)))
+                leagueLastPoint = t.location(in: view)
+                leagueStartRadius = t.majorRadius
+                leaguePressFired = false
             }
 
         case .moved:
@@ -517,7 +524,17 @@ final class TouchpadViewController: UIViewController {
                 if hypot(p.x - leagueStartPoint.x, p.y - leagueStartPoint.y) > tapSlop {
                     leagueMoved = true
                 }
-                dispatch(.aim(p))
+                // Firm press: finger has not travelled, but the contact patch grew noticeably.
+                if !leagueMoved, !leaguePressFired, leagueStartRadius > 0,
+                   t.majorRadius >= max(leagueStartRadius * pressGrowthFactor, leagueStartRadius + pressGrowthMinimum) {
+                    leaguePressFired = true
+                    dispatch(.press(at: p))
+                }
+                let d = CGPoint(x: p.x - leagueLastPoint.x, y: p.y - leagueLastPoint.y)
+                leagueLastPoint = p
+                if leagueMoved, d != .zero {
+                    dispatch(.move(dx: d.x * trackpadSensitivity, dy: d.y * trackpadSensitivity))
+                }
             }
 
         case .ended, .cancelled:
@@ -533,7 +550,7 @@ final class TouchpadViewController: UIViewController {
             // The scroll view cancels our touches when a two-finger drag becomes a scroll.
             guard phase != .cancelled else { return }
             let limit = fingers == 1 ? tapMaxDuration : multiTapMaxDuration
-            guard duration < limit, fingers > 1 || !leagueMoved else { return }
+            guard duration < limit, fingers > 1 || (!leagueMoved && !leaguePressFired) else { return }
             dispatch(.tap(fingers: fingers, at: centroid(points)))
 
         default:
@@ -548,12 +565,14 @@ final class TouchpadViewController: UIViewController {
             return
         }
         switch gesture {
-        case .aim(let p):
-            sendAbsolute(p)
-        case .tap(let fingers, let p):
+        case .move(let dx, let dy):
+            link.send(Packet(kind: .moveRelative, dx: Float(dx), dy: Float(dy)))
+        case .press:
+            click(.left)                                // attack-move / select at the pointer
+        case .tap(let fingers, _):
             switch fingers {
-            case 1: sendAbsolute(p); click(.right)      // move here
-            case 2: sendAbsolute(p); click(.left)       // attack-move here
+            case 1: click(.right)                       // move command at the pointer
+            case 2: click(.left)                        // attack-move at the pointer
             case 3: click(.back)                        // mouse 4: summoner
             default: click(.forward)                    // mouse 5: item
             }
@@ -570,11 +589,9 @@ final class TouchpadViewController: UIViewController {
 
     // MARK: Fingers (Desktop mode gesture recognizers)
 
-    /// Finger taps are positional like the Pencil: jump the pointer there, then click.
-    /// Desktop clicks with the left button; League right-clicks, which is "move here".
+    /// Fingers are a trackpad: a tap clicks wherever the pointer already is.
     @objc private func handleOneFingerTap(_ g: UITapGestureRecognizer) {
-        sendAbsolute(g.location(in: view))
-        click(mode == .league ? .right : .left)
+        click(.left)
     }
 
     @objc private func handleTwoFingerTap(_ g: UITapGestureRecognizer) {
@@ -688,9 +705,9 @@ final class TouchpadViewController: UIViewController {
         switch mode {
         case .desktop:
             hint = "Pencil: hover moves · touch clicks · double-tap right-clicks · squeeze/stab = back\n" +
-                   "Fingers: tap jumps + clicks · 1 drag moves · 2 drag scrolls · 2 tap right-clicks · 3 swipe Spaces · pinch zooms"
+                   "Fingers: 1 drag moves · 1 tap clicks · 2 drag scrolls · 2 tap right-clicks · 3 swipe Spaces · pinch zooms"
         case .league:
-            hint = "Finger: hold = aim · tap = move · 2-tap = attack-move · 3-tap = summoner (M4) · 4-tap = item (M5) · 2 drag = zoom\n" +
+            hint = "Finger: drag = move pointer · tap = move cmd · firm press = attack/select · 2-tap = attack · 3-tap = summoner (M4) · 4-tap = item (M5)\n" +
                    "Pencil: hover aims · tip tap = move (hold to keep moving) · barrel double-tap = attack-move · squeeze = M4"
         case .training:
             hint = "Training: nothing is sent to the Mac. Pick a drill below, press Start, hit the prompts on the beat."

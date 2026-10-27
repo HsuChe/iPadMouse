@@ -36,7 +36,7 @@ Two modes, switched with the **Mode** button on the iPad and remembered between 
 | Pencil double-tap (barrel) | Right click |
 | Pencil Pro squeeze | Back (mouse button 4) |
 | Quick hard stab with the Pencil | Back (mouse button 4) |
-| One finger tap | Pointer jumps to that spot, then left click |
+| One finger tap | Left click at the pointer |
 | One finger drag | Move the pointer like a trackpad |
 | Two finger drag | Scroll with momentum |
 | Two finger tap | Right click |
@@ -51,19 +51,20 @@ spell and mouse 5 is item 1 (check `League of Legends.app/Contents/LoL/Config/in
 
 | Input | Result on the Mac |
 |---|---|
-| One finger down or held | Pointer follows the finger (aim for skillshots; no click) |
-| Quick one-finger tap | Right click there (move) |
-| Two-finger tap | Left click at the midpoint (attack-move) |
+| One finger drag | Move the pointer (trackpad, relative) |
+| Quick one-finger tap | Right click (move command) |
+| Firm press without moving | Left click (attack-move / select). Detected from the contact patch growing; iPads have no finger pressure sensor |
+| Two-finger tap | Left click (attack-move) |
 | Three-finger tap | Mouse 4 (summoner spell) |
 | Four-finger tap | Mouse 5 (item 1) |
 | Two-finger drag | Scroll (camera zoom) |
-| Pencil hovering | Pointer follows |
+| Pencil hovering | Pointer follows (absolute, inside the mapped area) |
 | Pencil tip tap | Right click there (move); hold to keep moving |
 | Pencil barrel double-tap | Left click at the pointer (attack-move) |
 | Pencil Pro squeeze | Mouse 4 |
 | Hard stab, three-finger swipes, pinch | Disabled |
 
-Orb walking one-handed: two fingers on the target, one finger where you want to step, repeat.
+Orb walking one-handed: drag onto the target and press firmly (or two-finger tap), drag away and tap, repeat.
 
 ### Training mode
 
