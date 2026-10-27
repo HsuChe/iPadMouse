@@ -7,6 +7,8 @@ final class TouchpadView: UIScrollView {
     static let center = CGPoint(x: 50_000, y: 50_000)
 
     var pencilHandler: ((UITouch, UITouch.Phase) -> Void)?
+    /// Raw finger touches (used by League mode; Desktop mode uses gesture recognizers instead).
+    var fingerHandler: ((Set<UITouch>, UITouch.Phase) -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -49,6 +51,10 @@ final class TouchpadView: UIScrollView {
     private func forward(_ touches: Set<UITouch>, _ phase: UITouch.Phase) {
         for touch in touches where touch.type == .pencil {
             pencilHandler?(touch, phase)
+        }
+        let fingers = touches.filter { $0.type == .direct }
+        if !fingers.isEmpty {
+            fingerHandler?(fingers, phase)
         }
     }
 }

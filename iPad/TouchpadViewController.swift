@@ -6,9 +6,12 @@
 //          click, squeeze = back (mouse 4), quick hard stab = back. Finger tap jumps the
 //          pointer to that spot and left-clicks; 1 drag = trackpad move; 2 drag = scroll
 //          with momentum; 2 tap = right click; 3 swipe = Spaces; pinch = Cmd +/-.
-// League:  finger tap jumps to that spot and RIGHT-clicks (move command). Squeeze =
-//          mouse 4 (summoner), Pencil double-tap = mouse 5 (item). Hard stab, 3-finger
-//          swipes and pinch are disabled so nothing misfires in a fight.
+// League:  one-handed finger layout. Finger down/held = pointer follows the finger
+//          (aim for skillshots, no click). Quick 1-finger tap = right click there (move).
+//          2-finger tap = left click at the centroid (attack-move). 3-finger tap =
+//          mouse 4 (summoner). 4-finger tap = mouse 5 (item). 2-finger drag still scrolls
+//          (camera zoom). Pencil: hover aims, touch = left click, squeeze = mouse 4,
+//          double-tap = mouse 5. Hard stab, 3-finger swipes and pinch are disabled.
 
 import UIKit
 import QuartzCore
@@ -25,6 +28,7 @@ final class TouchpadViewController: UIViewController {
         didSet {
             UserDefaults.standard.set(mode.rawValue, forKey: "padMode")
             modeButton.setTitle(mode.title, for: .normal)
+            applyModeGestures()
             refreshHUD()
         }
     }
@@ -38,6 +42,12 @@ final class TouchpadViewController: UIViewController {
     private let hardPressWindow: TimeInterval = 0.12
     /// Pencil movement beyond this many points commits a left-click immediately (so drags feel instant).
     private let dragSlop: CGFloat = 4
+    /// League: a one-finger touch shorter than this, with little movement, is a tap (move command).
+    private let tapMaxDuration: TimeInterval = 0.25
+    /// League: multi-finger taps may take a little longer since fingers land and lift unevenly.
+    private let multiTapMaxDuration: TimeInterval = 0.35
+    /// League: a finger that travels further than this is an aim-hold, not a tap.
+    private let tapSlop: CGFloat = 12
 
     // MARK: Pieces
     private let link = Link()
@@ -48,6 +58,16 @@ final class TouchpadViewController: UIViewController {
     private let wiredButton = UIButton(type: .system)
     private let modeButton = UIButton(type: .system)
     private var pinch: UIPinchGestureRecognizer!
+    /// Recognizers that only make sense in Desktop mode; League handles fingers itself.
+    private var desktopRecognizers: [UIGestureRecognizer] = []
+
+    // League finger gesture state
+    private var leagueActive = Set<UITouch>()
+    private var leaguePoints: [UITouch: CGPoint] = [:]
+    private var leagueStart: TimeInterval = 0
+    private var leagueStartPoint = CGPoint.zero
+    private var leagueMaxFingers = 0
+    private var leagueMoved = false
 
     // MARK: State
     private var macScreen = CGSize(width: 16, height: 10)
@@ -92,6 +112,7 @@ final class TouchpadViewController: UIViewController {
         pad.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         pad.delegate = self
         pad.pencilHandler = { [weak self] touch, phase in self?.handlePencil(touch, phase) }
+        pad.fingerHandler = { [weak self] touches, phase in self?.handleFingers(touches, phase) }
         view.addSubview(pad)
 
         let pencil = UIPencilInteraction()
@@ -162,12 +183,21 @@ final class TouchpadViewController: UIViewController {
         }
 
         let fingerOnly = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
-        for recognizer in [oneTap, twoTap, pan, pinch] + swipes {
+        desktopRecognizers = [oneTap, twoTap, pan, pinch] + swipes
+        for recognizer in desktopRecognizers {
             recognizer.allowedTouchTypes = fingerOnly
             recognizer.cancelsTouchesInView = false
             recognizer.delegate = self
             pad.addGestureRecognizer(recognizer)
         }
+        applyModeGestures()
+    }
+
+    private func applyModeGestures() {
+        let desktop = mode == .desktop
+        for recognizer in desktopRecognizers { recognizer.isEnabled = desktop }
+        leagueActive.removeAll()
+        leaguePoints.removeAll()
     }
 
     private func setupLink() {
@@ -276,7 +306,79 @@ final class TouchpadViewController: UIViewController {
         link.send(Packet(kind: .buttonDown, button: MouseButton.left.rawValue))
     }
 
-    // MARK: Fingers
+    // MARK: League finger layout (raw touches)
+
+    private func handleFingers(_ touches: Set<UITouch>, _ phase: UITouch.Phase) {
+        guard mode == .league else { return }
+        switch phase {
+        case .began:
+            if leagueActive.isEmpty {
+                leaguePoints.removeAll()
+                leagueStart = CACurrentMediaTime()
+                leagueMaxFingers = 0
+                leagueMoved = false
+                leagueStartPoint = touches.first?.location(in: view) ?? .zero
+            }
+            for t in touches {
+                leagueActive.insert(t)
+                leaguePoints[t] = t.location(in: view)
+            }
+            leagueMaxFingers = max(leagueMaxFingers, leagueActive.count)
+            // A lone finger aims immediately: the pointer is where you touch.
+            if leagueActive.count == 1, let t = touches.first {
+                sendAbsolute(t.location(in: view))
+            }
+
+        case .moved:
+            for t in touches where leagueActive.contains(t) {
+                leaguePoints[t] = t.location(in: view)
+            }
+            if leagueActive.count == 1, let t = touches.first, leagueActive.contains(t) {
+                let p = t.location(in: view)
+                if hypot(p.x - leagueStartPoint.x, p.y - leagueStartPoint.y) > tapSlop {
+                    leagueMoved = true
+                }
+                sendAbsolute(p)
+            }
+
+        case .ended, .cancelled:
+            for t in touches where leagueActive.contains(t) {
+                leaguePoints[t] = t.location(in: view)
+                leagueActive.remove(t)
+            }
+            guard leagueActive.isEmpty, !leaguePoints.isEmpty else { return }
+            let duration = CACurrentMediaTime() - leagueStart
+            let points = Array(leaguePoints.values)
+            let fingers = leagueMaxFingers
+            leaguePoints.removeAll()
+            // The scroll view cancels our touches when a two-finger drag becomes a scroll.
+            guard phase != .cancelled else { return }
+            switch fingers {
+            case 1:
+                if duration < tapMaxDuration, !leagueMoved { click(.right) }        // move here
+            case 2:
+                if duration < multiTapMaxDuration {
+                    sendAbsolute(centroid(points))
+                    click(.left)                                                     // attack-move here
+                }
+            case 3:
+                if duration < multiTapMaxDuration { click(.back) }                   // mouse 4: summoner
+            default:
+                if duration < multiTapMaxDuration { click(.forward) }                // mouse 5: item
+            }
+
+        default:
+            break
+        }
+    }
+
+    private func centroid(_ points: [CGPoint]) -> CGPoint {
+        guard !points.isEmpty else { return .zero }
+        let sum = points.reduce(CGPoint.zero) { CGPoint(x: $0.x + $1.x, y: $0.y + $1.y) }
+        return CGPoint(x: sum.x / CGFloat(points.count), y: sum.y / CGFloat(points.count))
+    }
+
+    // MARK: Fingers (Desktop mode gesture recognizers)
 
     /// Finger taps are positional like the Pencil: jump the pointer there, then click.
     /// Desktop clicks with the left button; League right-clicks, which is "move here".
@@ -372,8 +474,8 @@ final class TouchpadViewController: UIViewController {
             hint = "Pencil: hover moves · touch clicks · double-tap right-clicks · squeeze/stab = back\n" +
                    "Fingers: tap jumps + clicks · 1 drag moves · 2 drag scrolls · 2 tap right-clicks · 3 swipe Spaces · pinch zooms"
         case .league:
-            hint = "Pencil: hover moves · touch left-clicks · squeeze = mouse 4 · double-tap = mouse 5\n" +
-                   "Fingers: tap jumps + right-clicks (move) · 1 drag moves · 2 drag scrolls · 2 tap right-clicks"
+            hint = "Finger: hold = aim · tap = move · 2-tap = attack-move · 3-tap = summoner (M4) · 4-tap = item (M5) · 2 drag = zoom\n" +
+                   "Pencil: hover aims · touch = attack-move · squeeze = M4 · double-tap = M5"
         }
         hud.text = status + "\n" + hint
     }

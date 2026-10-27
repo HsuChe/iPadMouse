@@ -45,19 +45,25 @@ Two modes, switched with the **Mode** button on the iPad and remembered between 
 
 ### League mode
 
-Made for League of Legends with summoner spells and the first item bound to mouse 4 and mouse 5.
+A one-handed finger layout for League of Legends, with the Pencil as an optional precision aimer.
+Matches bindings where left click is attack-move, right click is move, mouse 4 is a summoner
+spell and mouse 5 is item 1 (check `League of Legends.app/Contents/LoL/Config/input.ini`).
 
 | Input | Result on the Mac |
 |---|---|
+| One finger down or held | Pointer follows the finger (aim for skillshots; no click) |
+| Quick one-finger tap | Right click there (move) |
+| Two-finger tap | Left click at the midpoint (attack-move) |
+| Three-finger tap | Mouse 4 (summoner spell) |
+| Four-finger tap | Mouse 5 (item 1) |
+| Two-finger drag | Scroll (camera zoom) |
 | Pencil hovering | Pointer follows |
-| Pencil touch | Left click (select, hold to drag-select) |
-| One finger tap | Pointer jumps to that spot, then right click (move / attack there) |
-| Pencil Pro squeeze | Mouse 4 (back) |
-| Pencil double-tap | Mouse 5 (forward) |
-| One finger drag | Move the pointer |
-| Two finger drag | Scroll (camera zoom) |
-| Two finger tap | Right click at the pointer |
-| Hard stab, three-finger swipes, pinch | Disabled, so nothing misfires in a fight |
+| Pencil touch | Left click (attack-move) |
+| Pencil Pro squeeze | Mouse 4 |
+| Pencil double-tap | Mouse 5 |
+| Hard stab, three-finger swipes, pinch | Disabled |
+
+Orb walking one-handed: two fingers on the target, one finger where you want to step, repeat.
 
 ### Both modes
 
