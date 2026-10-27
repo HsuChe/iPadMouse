@@ -121,6 +121,12 @@ final class TouchpadViewController: UIViewController {
     /// Which button the current Pencil touch is holding (left on Desktop, right = move in League).
     private var pencilButton: MouseButton = .left
     private var lastPencilPoint = CGPoint.zero
+    /// Tip double-tap (League): the second quick tap near the first becomes a left click (attack-move).
+    private var lastPencilTapTime: TimeInterval = 0
+    private var lastPencilTapPoint = CGPoint.zero
+    private var pencilTapIsSecond = false
+    private let pencilDoubleTapWindow: TimeInterval = 0.3
+    private let pencilDoubleTapRadius: CGFloat = 30
     private var lastHoverSent: TimeInterval = 0
     /// Keeps ProMotion at 120 Hz: input events are delivered in step with the display, and a static
     /// black screen would otherwise let the panel idle down to 24 Hz and starve the pointer stream.
@@ -440,7 +446,9 @@ final class TouchpadViewController: UIViewController {
         let p = touch.location(in: view)
         lastPencilPoint = p
         if mode == .training {
-            if phase == .began { trainer.handle(.tap(fingers: 1, at: p)) }   // tip tap = MOVE prompt
+            if phase == .began {
+                trainer.handle(.tap(fingers: registerPencilTap(at: p) ? 2 : 1, at: p))   // second tap = ATK prompt
+            }
             return
         }
         switch phase {
@@ -449,6 +457,7 @@ final class TouchpadViewController: UIViewController {
             pencilDownSent = false
             pencilConsumed = false
             pencilStart = p
+            pencilTapIsSecond = mode == .league && registerPencilTap(at: p)
             sendAbsolute(p)
             // Defer the left-click briefly so a hard stab can become "back" instead of a click.
             let work = DispatchWorkItem { [weak self] in self?.commitPencilDown() }
@@ -484,10 +493,20 @@ final class TouchpadViewController: UIViewController {
         }
     }
 
+    /// Returns true when this tap is the second of a quick double-tap at roughly the same spot.
+    private func registerPencilTap(at p: CGPoint) -> Bool {
+        let now = CACurrentMediaTime()
+        let isSecond = now - lastPencilTapTime < pencilDoubleTapWindow
+            && hypot(p.x - lastPencilTapPoint.x, p.y - lastPencilTapPoint.y) < pencilDoubleTapRadius
+        lastPencilTapTime = isSecond ? 0 : now
+        lastPencilTapPoint = p
+        return isSecond
+    }
+
     private func commitPencilDown() {
         guard pencilTouch != nil, !pencilDownSent, !pencilConsumed else { return }
         pencilDownSent = true
-        pencilButton = mode == .league ? .right : .left
+        pencilButton = mode == .league ? (pencilTapIsSecond ? .left : .right) : .left
         link.send(Packet(kind: .buttonDown, button: pencilButton.rawValue))
     }
 
@@ -708,7 +727,7 @@ final class TouchpadViewController: UIViewController {
                    "Fingers: 1 drag moves · 1 tap clicks · 2 drag scrolls · 2 tap right-clicks · 3 swipe Spaces · pinch zooms"
         case .league:
             hint = "Finger: drag = move pointer · tap = move cmd · firm press = attack/select · 2-tap = attack · 3-tap = summoner (M4) · 4-tap = item (M5)\n" +
-                   "Pencil: hover aims · tip tap = move (hold to keep moving) · barrel double-tap = attack-move · squeeze = M4"
+                   "Pencil: hover aims · tip tap = move · tip double-tap = attack-move · squeeze = M4"
         case .training:
             hint = "Training: nothing is sent to the Mac. Pick a drill below, press Start, hit the prompts on the beat."
         }

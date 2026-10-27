@@ -60,7 +60,7 @@ spell and mouse 5 is item 1 (check `League of Legends.app/Contents/LoL/Config/in
 | Two-finger drag | Scroll (camera zoom) |
 | Pencil hovering | Pointer follows (absolute, inside the mapped area) |
 | Pencil tip tap | Right click there (move); hold to keep moving |
-| Pencil barrel double-tap | Left click at the pointer (attack-move) |
+| Pencil tip double-tap | Second tap is a left click there (attack-move); barrel double-tap does the same at the pointer |
 | Pencil Pro squeeze | Mouse 4 |
 | Hard stab, three-finger swipes, pinch | Disabled |
 
