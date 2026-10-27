@@ -5,10 +5,25 @@ import Foundation
 import Network
 import Darwin
 import CoreGraphics
+import UIKit
 
 final class Link {
     var onStatus: ((String) -> Void)?
     var onConfig: ((CGSize) -> Void)?
+    /// Names of Macs currently visible on the network (main-thread safe copy via onMacsChanged).
+    var onMacsChanged: (([String]) -> Void)?
+    private(set) var availableMacs: [String] = []
+
+    /// Stable per-install identity the Mac approves once.
+    private let token: [UInt8] = {
+        if let saved = UserDefaults.standard.data(forKey: "deviceToken"), saved.count == 16 { return [UInt8](saved) }
+        let fresh = withUnsafeBytes(of: UUID().uuid) { Array($0) }
+        UserDefaults.standard.set(Data(fresh), forKey: "deviceToken")
+        return fresh
+    }()
+    private let deviceName = UIDevice.current.name
+    private var preferredMac: String? = UserDefaults.standard.string(forKey: "preferredMac")
+    private var results = Set<NWBrowser.Result>()
 
     /// When on, Wi-Fi and cellular are prohibited so only a wired (USB) link can be used.
     var preferWired = false {
@@ -67,6 +82,26 @@ final class Link {
         (directConnection ?? connection)?.send(content: packet.encoded(), completion: .idempotent)
     }
 
+    /// Hello (with our token) preceded by our name, on a specific connection.
+    private func sendHello(on c: NWConnection) {
+        c.send(content: Packet.name(deviceName), completion: .idempotent)
+        c.send(content: Packet.hello(token: token), completion: .idempotent)
+    }
+
+    /// User picked a Mac from the list.
+    func connect(toMacNamed name: String) {
+        preferredMac = name
+        UserDefaults.standard.set(name, forKey: "preferredMac")
+        queue.async {
+            self.dropConnection(retry: false)
+            if let r = self.results.first(where: { self.name(of: $0.endpoint) == name }) {
+                self.connect(to: r.endpoint)
+            } else {
+                self.report("\(name) is not visible right now")
+            }
+        }
+    }
+
     // MARK: Private
 
     private func report(_ text: String) {
@@ -74,11 +109,21 @@ final class Link {
     }
 
     private func connectIfNeeded(_ results: Set<NWBrowser.Result>) {
+        self.results = results
+        let macs = results.map { name(of: $0.endpoint) }.sorted()
+        if macs != availableMacs {
+            availableMacs = macs
+            onMacsChanged?(macs)
+        }
         guard connection == nil else { return }
-        if let first = results.first {
-            connect(to: first.endpoint)
+        if let preferred = preferredMac, let r = results.first(where: { name(of: $0.endpoint) == preferred }) {
+            connect(to: r.endpoint)
+        } else if results.count == 1, let only = results.first {
+            connect(to: only.endpoint)
+        } else if results.isEmpty {
+            report("Searching for a Mac… is iPad Mouse running there?")
         } else {
-            report("Searching for the Mac… is iPad Mouse running there?")
+            report("\(results.count) Macs found. Tap “Macs” to choose one.")
         }
     }
 
@@ -96,6 +141,7 @@ final class Link {
                 self.report("Link up, waiting for the Mac to reply…")
                 self.startKeepalive()
                 self.receive(on: connection)
+                self.sendHello(on: connection)
             case .waiting(let error):
                 self.report("Waiting: \(error.localizedDescription)")
             case .failed(let error):
@@ -138,11 +184,9 @@ final class Link {
                 self.dropConnection(retry: true)
                 return
             }
-            self.send(Packet(kind: .hello))
+            if let direct = self.directConnection { self.sendHello(on: direct) }
             // Keep the discovery link alive too so the Mac keeps telling us its USB address.
-            if self.directConnection != nil {
-                self.connection?.send(content: Packet(kind: .hello).encoded(), completion: .idempotent)
-            }
+            if let c = self.connection { self.sendHello(on: c) }
         }
         timer.resume()
         keepalive = timer
@@ -153,6 +197,12 @@ final class Link {
             guard let self else { return }
             if let data, let peer = Packet.parsePeerAddress(data) {
                 if self.preferWired { self.tryDirect(ipv6: peer.ipv6, port: peer.port) }
+            } else if let data, let packet = Packet(data: data), packet.kind == .pairPending {
+                self.lastReply = Date()
+                self.report("Waiting for approval on \(self.name(of: connection.endpoint))… (check the Mac's screen)")
+            } else if let data, let packet = Packet(data: data), packet.kind == .pairDenied {
+                self.lastReply = Date()
+                self.report("\(self.name(of: connection.endpoint)) denied this iPad. Use “Forget Paired iPads” on the Mac to retry.")
             } else if let data, let packet = Packet(data: data), packet.kind == .config {
                 let firstReply = Date().timeIntervalSince(self.lastReply) > 1.5
                 self.lastReply = Date()
@@ -189,7 +239,7 @@ final class Link {
                 guard let self else { return }
                 switch state {
                 case .ready:
-                    c.send(content: Packet(kind: .hello).encoded(), completion: .idempotent)
+                    self.sendHello(on: c)
                     self.receiveDirect(on: c, host: host)
                 case .failed, .cancelled:
                     self.directCandidates[host] = nil

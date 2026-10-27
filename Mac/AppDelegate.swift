@@ -26,6 +26,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         naturalItem.target = self
         naturalItem.state = injector.naturalScrolling ? .on : .off
         menu.addItem(naturalItem)
+        let forgetItem = NSMenuItem(title: "Forget Paired iPads", action: #selector(forgetDevices), keyEquivalent: "")
+        forgetItem.target = self
+        menu.addItem(forgetItem)
         let axItem = NSMenuItem(title: "Open Accessibility Settings…", action: #selector(openAccessibility), keyEquivalent: "")
         axItem.target = self
         menu.addItem(axItem)
@@ -40,8 +43,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         receiver.onStatus = { [weak self] text in
             DispatchQueue.main.async { self?.statusMenuItem.title = text }
         }
+        receiver.onPairRequest = { [weak self] name, token in
+            DispatchQueue.main.async { self?.askToPair(name: name, token: token) }
+        }
         receiver.start()
         ensureAccessibility()
+    }
+
+    /// First contact from an iPad: ask the user before accepting any input from it.
+    private func askToPair(name: String, token: [UInt8]) {
+        let alert = NSAlert()
+        alert.messageText = "Allow “\(name)” to control this Mac?"
+        alert.informativeText = "iPad Mouse will accept pointer, click, scroll and keyboard input from this iPad. You can revoke this later with “Forget Paired iPads” in the menu."
+        alert.addButton(withTitle: "Allow")
+        alert.addButton(withTitle: "Deny")
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        receiver.resolvePairing(token: token, allowed: response == .alertFirstButtonReturn)
+    }
+
+    @objc private func forgetDevices() {
+        receiver.forgetAllDevices()
     }
 
     func applicationWillTerminate(_ notification: Notification) {

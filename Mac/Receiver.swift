@@ -7,6 +7,8 @@ import Darwin
 
 final class Receiver {
     var onStatus: ((String) -> Void)?
+    /// Called (on the receiver queue) when an unknown iPad asks to connect. Answer with resolvePairing.
+    var onPairRequest: ((_ name: String, _ token: [UInt8]) -> Void)?
 
     private let injector: Injector
     private let queue = DispatchQueue(label: "ipadmouse.receiver", qos: .userInteractive)
@@ -14,6 +16,38 @@ final class Receiver {
     private var connections: [NWConnection] = []
     private var lastPacket = Date()
     private var watchdog: DispatchSourceTimer?
+
+    // Pairing: approved device tokens persist; a connection (one UDP flow) is authorized once its hello carries one.
+    private var approvedTokens: Set<Data> = Set((UserDefaults.standard.array(forKey: "approvedTokens") as? [Data]) ?? [])
+    private var deniedTokens = Set<Data>()
+    private var pendingToken: Data?
+    private var authorized = Set<ObjectIdentifier>()
+    private var names: [ObjectIdentifier: String] = [:]
+
+    func resolvePairing(token: [UInt8], allowed: Bool) {
+        queue.async {
+            let key = Data(token)
+            if allowed {
+                self.approvedTokens.insert(key)
+                UserDefaults.standard.set(Array(self.approvedTokens), forKey: "approvedTokens")
+                self.log("pairing approved")
+            } else {
+                self.deniedTokens.insert(key)
+                self.log("pairing denied")
+            }
+            if self.pendingToken == key { self.pendingToken = nil }
+        }
+    }
+
+    func forgetAllDevices() {
+        queue.async {
+            self.approvedTokens.removeAll()
+            self.deniedTokens.removeAll()
+            self.authorized.removeAll()
+            UserDefaults.standard.removeObject(forKey: "approvedTokens")
+            self.onStatus?("All iPads forgotten; waiting for a new request")
+        }
+    }
 
     init(injector: Injector) {
         self.injector = injector
@@ -99,6 +133,8 @@ final class Receiver {
             switch state {
             case .failed, .cancelled:
                 self.connections.removeAll { $0 === connection }
+                self.authorized.remove(ObjectIdentifier(connection))
+                self.names[ObjectIdentifier(connection)] = nil
                 self.onStatus?("iPad disconnected")
             default:
                 break
@@ -111,7 +147,11 @@ final class Receiver {
     private func receive(on connection: NWConnection) {
         connection.receiveMessage { [weak self] data, _, _, error in
             guard let self else { return }
-            if let data, let packet = Packet(data: data) {
+            if let data, let name = Packet.parseName(data) {
+                self.names[ObjectIdentifier(connection)] = name
+            } else if let data, let token = Packet.token(fromHello: data) {
+                self.handleHello(token: token, from: connection)
+            } else if let data, let packet = Packet(data: data) {
                 self.handle(packet, from: connection)
             }
             if error == nil {
@@ -153,13 +193,36 @@ final class Receiver {
         return result
     }
 
+    private func handleHello(token: [UInt8], from connection: NWConnection) {
+        lastPacket = Date()
+        let id = ObjectIdentifier(connection)
+        let key = Data(token)
+        let name = names[id] ?? "iPad"
+        if approvedTokens.contains(key) {
+            if !authorized.contains(id) {
+                authorized.insert(id)
+                onStatus?("\(name) connected")
+                log("authorized \(name) on \(connection.endpoint)")
+            }
+            sendConfig(to: connection)
+        } else if deniedTokens.contains(key) {
+            connection.send(content: Packet(kind: .pairDenied).encoded(), completion: .idempotent)
+        } else {
+            connection.send(content: Packet(kind: .pairPending).encoded(), completion: .idempotent)
+            if pendingToken == nil {
+                pendingToken = key
+                onStatus?("\(name) is asking to connect…")
+                onPairRequest?(name, token)
+            }
+        }
+    }
+
     private func handle(_ p: Packet, from connection: NWConnection) {
         lastPacket = Date()
+        guard authorized.contains(ObjectIdentifier(connection)) else { return }
         switch p.kind {
-        case .hello:
-            sendConfig(to: connection)
-            onStatus?("iPad connected: \(connection.endpoint)")
-            NSLog("iPadMouse hello from \(connection.endpoint)")
+        case .hello, .name, .pairPending, .pairDenied:
+            break
         case .config, .peerAddress:
             break
         case .moveAbsolute:

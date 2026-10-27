@@ -80,6 +80,7 @@ final class TouchpadViewController: UIViewController {
     private let outline = UIView()
     private let hud = UILabel()
     private let dimButton = UIButton(type: .system)
+    private let macsButton = UIButton(type: .system)
     private let wiredButton = UIButton(type: .system)
     private let modeButton = UIButton(type: .system)
     private let areaButton = UIButton(type: .system)
@@ -174,6 +175,7 @@ final class TouchpadViewController: UIViewController {
         view.addSubview(hud)
 
         configure(dimButton, title: "Dim screen", action: #selector(toggleDim))
+        configure(macsButton, title: "Macs", action: #selector(chooseMac))
         configure(wiredButton, title: "Prefer USB: off", action: #selector(toggleWired))
         configure(modeButton, title: mode.title, action: #selector(toggleMode))
         configure(areaButton, title: "", action: #selector(cycleAreaScale))
@@ -187,6 +189,8 @@ final class TouchpadViewController: UIViewController {
             hud.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, multiplier: 0.6),
             dimButton.topAnchor.constraint(equalTo: safe.topAnchor, constant: 4),
             dimButton.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -16),
+            macsButton.topAnchor.constraint(equalTo: dimButton.bottomAnchor, constant: 4),
+            macsButton.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -16),
             wiredButton.topAnchor.constraint(equalTo: safe.topAnchor, constant: 4),
             wiredButton.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 16),
             modeButton.topAnchor.constraint(equalTo: wiredButton.bottomAnchor, constant: 4),
@@ -253,6 +257,11 @@ final class TouchpadViewController: UIViewController {
             DispatchQueue.main.async {
                 self?.status = text
                 self?.refreshHUD()
+            }
+        }
+        link.onMacsChanged = { [weak self] macs in
+            DispatchQueue.main.async {
+                self?.macsButton.setTitle(macs.isEmpty ? "Macs (none)" : "Macs (\(macs.count))", for: .normal)
             }
         }
         link.onConfig = { [weak self] size in
@@ -553,6 +562,7 @@ final class TouchpadViewController: UIViewController {
         areaButton.alpha = dimmed ? 0.02 : 1
         anchorButton.alpha = dimmed ? 0.02 : 1
         dimButton.alpha = dimmed ? 0.1 : 1
+        macsButton.alpha = dimmed ? 0.02 : 1
     }
 
     @objc private func appWillResignActive() {
@@ -574,6 +584,19 @@ final class TouchpadViewController: UIViewController {
 
     @objc private func toggleMode() {
         mode = mode.next
+    }
+
+    @objc private func chooseMac() {
+        let sheet = UIAlertController(title: "Connect to", message: link.availableMacs.isEmpty ? "No Mac running iPad Mouse was found." : nil, preferredStyle: .actionSheet)
+        for name in link.availableMacs {
+            sheet.addAction(UIAlertAction(title: name, style: .default) { [weak self] _ in
+                self?.link.connect(toMacNamed: name)
+            })
+        }
+        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        sheet.popoverPresentationController?.sourceView = macsButton
+        sheet.popoverPresentationController?.sourceRect = macsButton.bounds
+        present(sheet, animated: true)
     }
 
     @objc private func toggleWired() {

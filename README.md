@@ -87,6 +87,16 @@ and game-aware drills fed by League's local Live Client Data API.
 | "Dim screen" button | Backlight to zero; the restore button stays in the top right |
 | "Prefer USB" button | Refuses Wi-Fi so only a wired link is used |
 
+### Connecting and pairing
+
+Open the iPad app with the Mac app running. The iPad lists every Mac running iPad Mouse under the
+**Macs** button; with one Mac it connects automatically, and it remembers your choice. The first time
+an iPad connects, the Mac shows an "Allow this iPad?" dialog; nothing is accepted until you click
+Allow. Approved iPads are remembered. **Forget Paired iPads** in the Mac menu revokes them all.
+
+**Prefer USB** on the iPad switches to a direct link over the USB cable once the Mac has told the
+iPad its address; the status line reads "Connected via USB (direct)".
+
 The mapped area is letterboxed to the Mac display's aspect ratio and drawn as a faint outline.
 
 ---

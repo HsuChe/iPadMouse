@@ -15,6 +15,9 @@ enum PacketKind: UInt8 {
     case scroll = 6         // dx,dy = finger travel in points, flags = ScrollPhase
     case key = 7            // button = virtual key code, flags = KeyModifiers
     case peerAddress = 8    // Mac -> iPad: bytes 1-2 = port (big endian), bytes 4-19 = a link-local IPv6 of the Mac
+    case pairPending = 9    // Mac -> iPad: this iPad is not approved yet; the Mac is asking its user
+    case pairDenied = 10    // Mac -> iPad: the Mac's user said no
+    case name = 11          // iPad -> Mac: bytes 4-19 = UTF-8 device name (truncated)
 }
 
 /// Values match CGMouseButton numbering, so the Mac can pass them straight through.
@@ -79,6 +82,35 @@ extension Packet {
         b[2] = UInt8(port & 0xff)
         for i in 0 ..< min(16, ipv6.count) { b[4 + i] = ipv6[i] }
         return Data(b)
+    }
+
+    /// Hello carries a 16-byte device token in bytes 4-19 so the Mac can recognise approved iPads.
+    static func hello(token: [UInt8]) -> Data {
+        var b = [UInt8](repeating: 0, count: byteCount)
+        b[0] = PacketKind.hello.rawValue
+        for i in 0 ..< min(16, token.count) { b[4 + i] = token[i] }
+        return Data(b)
+    }
+
+    static func token(fromHello data: Data) -> [UInt8]? {
+        let b = [UInt8](data)
+        guard b.count >= byteCount, b[0] == PacketKind.hello.rawValue else { return nil }
+        return Array(b[4 ..< 20])
+    }
+
+    static func name(_ text: String) -> Data {
+        var b = [UInt8](repeating: 0, count: byteCount)
+        b[0] = PacketKind.name.rawValue
+        let utf8 = Array(text.utf8.prefix(16))
+        for i in 0 ..< utf8.count { b[4 + i] = utf8[i] }
+        return Data(b)
+    }
+
+    static func parseName(_ data: Data) -> String? {
+        let b = [UInt8](data)
+        guard b.count >= byteCount, b[0] == PacketKind.name.rawValue else { return nil }
+        let bytes = Array(b[4 ..< 20]).prefix { $0 != 0 }
+        return String(decoding: bytes, as: UTF8.self)
     }
 
     static func parsePeerAddress(_ data: Data) -> (ipv6: [UInt8], port: UInt16)? {

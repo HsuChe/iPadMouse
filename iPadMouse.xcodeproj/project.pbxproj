@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		11CA919213D6F23EE057A61D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 906456379EA2F5CCD28A3024 /* Assets.xcassets */; };
 		1C639F4ADCBA3B699FBC461D /* TrainingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC3507D0426D43EDBF48A317 /* TrainingView.swift */; };
 		1CC2D7C9AF39A6978ACCD903 /* Injector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B547DAE935C6FCD5926398F /* Injector.swift */; };
 		2F37FCC6B2334650199E4874 /* TouchpadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76816A4D8439AD3C1F032366 /* TouchpadView.swift */; };
@@ -18,6 +19,7 @@
 		760A7455452457BC4E48C4FA /* Link.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3E2D8DB5B9EA8D473FDFC58 /* Link.swift */; };
 		7EDCAAF4FAFC9EDC7F037299 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDB34486D625648CB6C1C7F4 /* AppDelegate.swift */; };
 		A0EF18962DBC6B5F0036F40E /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F42628B0A2384349E06E8CF /* main.swift */; };
+		A54718610BC63A11A2447281 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 906456379EA2F5CCD28A3024 /* Assets.xcassets */; };
 		D31F508258175BB244976C30 /* TouchpadViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42E87793974740F977FC2BB /* TouchpadViewController.swift */; };
 /* End PBXBuildFile section */
 
@@ -28,6 +30,7 @@
 		4F42628B0A2384349E06E8CF /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		5ABC2704BF6AA5B7C1EA1E77 /* iPadMouseMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iPadMouseMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		76816A4D8439AD3C1F032366 /* TouchpadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchpadView.swift; sourceTree = "<group>"; };
+		906456379EA2F5CCD28A3024 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9B547DAE935C6FCD5926398F /* Injector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Injector.swift; sourceTree = "<group>"; };
 		AE1861251E38EAC5E596480A /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		AF995D8B88FC1BFB3C8D9B3A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -74,6 +77,7 @@
 		C3D1AD4FE8CF5E8872B0887A /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				906456379EA2F5CCD28A3024 /* Assets.xcassets */,
 				3AB135774DD64B47C7B7DCE8 /* Protocol.swift */,
 			);
 			path = Shared;
@@ -101,6 +105,7 @@
 			buildConfigurationList = 899F9C6228DBD380599CC4F4 /* Build configuration list for PBXNativeTarget "iPadMouse" */;
 			buildPhases = (
 				34F53ADF3AD5D3C69F587A63 /* Sources */,
+				23EE452D8A1A7987FD629B64 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -118,6 +123,7 @@
 			buildConfigurationList = D25B8B09D832BF10F173EF64 /* Build configuration list for PBXNativeTarget "iPadMouseMac" */;
 			buildPhases = (
 				2F946F33888E6A381D17435D /* Sources */,
+				EC173F84F2E08D8617785E50 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -168,6 +174,25 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		23EE452D8A1A7987FD629B64 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A54718610BC63A11A2447281 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EC173F84F2E08D8617785E50 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				11CA919213D6F23EE057A61D /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		2F946F33888E6A381D17435D /* Sources */ = {
