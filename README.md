@@ -25,6 +25,10 @@ Turns an iPad Pro into a pen tablet and trackpad for a Mac. Two apps:
 
 ## What it does
 
+Two modes, switched with the **Mode** button on the iPad and remembered between launches.
+
+### Desktop mode
+
 | Input | Result on the Mac |
 |---|---|
 | Pencil hovering (M2 iPad Pro or newer) | Pointer follows, hover effects work |
@@ -32,12 +36,33 @@ Turns an iPad Pro into a pen tablet and trackpad for a Mac. Two apps:
 | Pencil double-tap (barrel) | Right click |
 | Pencil Pro squeeze | Back (mouse button 4) |
 | Quick hard stab with the Pencil | Back (mouse button 4) |
+| One finger tap | Pointer jumps to that spot, then left click |
 | One finger drag | Move the pointer like a trackpad |
-| One finger tap | Left click, or right click while the Pencil is in use |
 | Two finger drag | Scroll with momentum |
 | Two finger tap | Right click |
 | Three finger swipe left/right/up/down | Next/previous Space, Mission Control, App Exposé |
 | Pinch | Cmd + / Cmd - |
+
+### League mode
+
+Made for League of Legends with summoner spells and the first item bound to mouse 4 and mouse 5.
+
+| Input | Result on the Mac |
+|---|---|
+| Pencil hovering | Pointer follows |
+| Pencil touch | Left click (select, hold to drag-select) |
+| One finger tap | Pointer jumps to that spot, then right click (move / attack there) |
+| Pencil Pro squeeze | Mouse 4 (back) |
+| Pencil double-tap | Mouse 5 (forward) |
+| One finger drag | Move the pointer |
+| Two finger drag | Scroll (camera zoom) |
+| Two finger tap | Right click at the pointer |
+| Hard stab, three-finger swipes, pinch | Disabled, so nothing misfires in a fight |
+
+### Both modes
+
+| Input | Result |
+|---|---|
 | "Dim screen" button | Backlight to zero; the restore button stays in the top right |
 | "Prefer USB" button | Refuses Wi-Fi so only a wired link is used |
 

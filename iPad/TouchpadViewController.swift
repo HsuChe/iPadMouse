@@ -1,15 +1,33 @@
 // All input mapping lives here.
 //
-// Pencil:  hover moves the pointer, touch = left click (hold to drag),
-//          double-tap = right click, squeeze = back (mouse 4), a quick hard stab = back.
-// Fingers: 1 drag = move (trackpad), 1 tap = left click, or right click while the
-//          Pencil is in use; 2 drag = scroll with momentum; 2 tap = right click;
-//          3 swipe = switch Spaces / Mission Control; pinch = Cmd +/- zoom.
+// Two modes, switchable from the HUD and remembered between launches:
+//
+// Desktop: Pencil hover moves, touch = left click (hold to drag), double-tap = right
+//          click, squeeze = back (mouse 4), quick hard stab = back. Finger tap jumps the
+//          pointer to that spot and left-clicks; 1 drag = trackpad move; 2 drag = scroll
+//          with momentum; 2 tap = right click; 3 swipe = Spaces; pinch = Cmd +/-.
+// League:  finger tap jumps to that spot and RIGHT-clicks (move command). Squeeze =
+//          mouse 4 (summoner), Pencil double-tap = mouse 5 (item). Hard stab, 3-finger
+//          swipes and pinch are disabled so nothing misfires in a fight.
 
 import UIKit
 import QuartzCore
 
+enum PadMode: String {
+    case desktop, league
+
+    var title: String { self == .desktop ? "Mode: Desktop" : "Mode: League" }
+}
+
 final class TouchpadViewController: UIViewController {
+
+    private var mode: PadMode = PadMode(rawValue: UserDefaults.standard.string(forKey: "padMode") ?? "") ?? .desktop {
+        didSet {
+            UserDefaults.standard.set(mode.rawValue, forKey: "padMode")
+            modeButton.setTitle(mode.title, for: .normal)
+            refreshHUD()
+        }
+    }
 
     // MARK: Tunables
     private let trackpadSensitivity: CGFloat = 1.6
@@ -20,8 +38,6 @@ final class TouchpadViewController: UIViewController {
     private let hardPressWindow: TimeInterval = 0.12
     /// Pencil movement beyond this many points commits a left-click immediately (so drags feel instant).
     private let dragSlop: CGFloat = 4
-    /// After the Pencil was seen, finger taps right-click for this long.
-    private let pencilGrace: TimeInterval = 1.5
 
     // MARK: Pieces
     private let link = Link()
@@ -30,13 +46,13 @@ final class TouchpadViewController: UIViewController {
     private let hud = UILabel()
     private let dimButton = UIButton(type: .system)
     private let wiredButton = UIButton(type: .system)
+    private let modeButton = UIButton(type: .system)
     private var pinch: UIPinchGestureRecognizer!
 
     // MARK: State
     private var macScreen = CGSize(width: 16, height: 10)
     private var activeRect = CGRect.zero
     private var status = "Starting…"
-    private var pencilActiveUntil: TimeInterval = 0
     private var pencilTouch: UITouch?
     private var pencilDownSent = false
     private var pencilConsumed = false
@@ -99,6 +115,7 @@ final class TouchpadViewController: UIViewController {
 
         configure(dimButton, title: "Dim screen", action: #selector(toggleDim))
         configure(wiredButton, title: "Prefer USB: off", action: #selector(toggleWired))
+        configure(modeButton, title: mode.title, action: #selector(toggleMode))
 
         let safe = view.safeAreaLayoutGuide
         NSLayoutConstraint.activate([
@@ -109,6 +126,8 @@ final class TouchpadViewController: UIViewController {
             dimButton.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -16),
             wiredButton.topAnchor.constraint(equalTo: safe.topAnchor, constant: 4),
             wiredButton.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 16),
+            modeButton.topAnchor.constraint(equalTo: wiredButton.bottomAnchor, constant: 4),
+            modeButton.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 16),
         ])
         refreshHUD()
     }
@@ -201,22 +220,14 @@ final class TouchpadViewController: UIViewController {
         link.send(Packet(kind: .key, button: code, flags: modifiers.rawValue))
     }
 
-    private var pencilActive: Bool { CACurrentMediaTime() < pencilActiveUntil }
-
-    private func markPencilActive() {
-        pencilActiveUntil = CACurrentMediaTime() + pencilGrace
-    }
-
     // MARK: Pencil
 
     @objc private func handleHover(_ g: UIHoverGestureRecognizer) {
         guard g.state == .began || g.state == .changed else { return }
-        markPencilActive()
         sendAbsolute(g.location(in: view))
     }
 
     private func handlePencil(_ touch: UITouch, _ phase: UITouch.Phase) {
-        markPencilActive()
         let p = touch.location(in: view)
         switch phase {
         case .began:
@@ -232,7 +243,7 @@ final class TouchpadViewController: UIViewController {
 
         case .moved:
             guard touch == pencilTouch, !pencilConsumed else { return }
-            if !pencilDownSent, touch.maximumPossibleForce > 0,
+            if mode == .desktop, !pencilDownSent, touch.maximumPossibleForce > 0,
                touch.force / touch.maximumPossibleForce >= hardPressRatio {
                 pencilDownWork?.cancel()
                 pencilConsumed = true
@@ -267,8 +278,11 @@ final class TouchpadViewController: UIViewController {
 
     // MARK: Fingers
 
+    /// Finger taps are positional like the Pencil: jump the pointer there, then click.
+    /// Desktop clicks with the left button; League right-clicks, which is "move here".
     @objc private func handleOneFingerTap(_ g: UITapGestureRecognizer) {
-        click(pencilActive ? .right : .left)
+        sendAbsolute(g.location(in: view))
+        click(mode == .league ? .right : .left)
     }
 
     @objc private func handleTwoFingerTap(_ g: UITapGestureRecognizer) {
@@ -285,7 +299,7 @@ final class TouchpadViewController: UIViewController {
     }
 
     @objc private func handlePinch(_ g: UIPinchGestureRecognizer) {
-        guard g.state == .changed else { return }
+        guard mode == .desktop, g.state == .changed else { return }
         if g.scale > 1.25 {
             key(KeyCode.equals, [.command])
             g.scale = 1
@@ -296,6 +310,7 @@ final class TouchpadViewController: UIViewController {
     }
 
     @objc private func handleThreeFingerSwipe(_ g: UISwipeGestureRecognizer) {
+        guard mode == .desktop else { return }
         switch g.direction {
         case .left:  key(KeyCode.rightArrow, [.control])   // next Space
         case .right: key(KeyCode.leftArrow, [.control])    // previous Space
@@ -329,6 +344,7 @@ final class TouchpadViewController: UIViewController {
         hud.alpha = dimmed ? 0 : 1
         outline.alpha = dimmed ? 0 : 1
         wiredButton.alpha = dimmed ? 0.02 : 1
+        modeButton.alpha = dimmed ? 0.02 : 1
         dimButton.alpha = dimmed ? 0.1 : 1
     }
 
@@ -340,15 +356,26 @@ final class TouchpadViewController: UIViewController {
         if dimmed { screen.brightness = 0 }
     }
 
+    @objc private func toggleMode() {
+        mode = mode == .desktop ? .league : .desktop
+    }
+
     @objc private func toggleWired() {
         link.preferWired.toggle()
         wiredButton.setTitle("Prefer USB: \(link.preferWired ? "on" : "off")", for: .normal)
     }
 
     private func refreshHUD() {
-        hud.text = status + "\n" +
-            "Pencil: hover moves · touch clicks · double-tap right-clicks · squeeze/stab = back\n" +
-            "Fingers: 1 drag moves · 1 tap clicks · 2 drag scrolls · 2 tap right-clicks · 3 swipe Spaces · pinch zooms"
+        let hint: String
+        switch mode {
+        case .desktop:
+            hint = "Pencil: hover moves · touch clicks · double-tap right-clicks · squeeze/stab = back\n" +
+                   "Fingers: tap jumps + clicks · 1 drag moves · 2 drag scrolls · 2 tap right-clicks · 3 swipe Spaces · pinch zooms"
+        case .league:
+            hint = "Pencil: hover moves · touch left-clicks · squeeze = mouse 4 · double-tap = mouse 5\n" +
+                   "Fingers: tap jumps + right-clicks (move) · 1 drag moves · 2 drag scrolls · 2 tap right-clicks"
+        }
+        hud.text = status + "\n" + hint
     }
 }
 
@@ -405,7 +432,7 @@ extension TouchpadViewController: UIScrollViewDelegate {
 
 extension TouchpadViewController: UIPencilInteractionDelegate {
     func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveTap tap: UIPencilInteraction.Tap) {
-        click(.right)
+        click(mode == .league ? .forward : .right)
     }
 
     func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze) {
