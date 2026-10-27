@@ -58,9 +58,9 @@ spell and mouse 5 is item 1 (check `League of Legends.app/Contents/LoL/Config/in
 | Four-finger tap | Mouse 5 (item 1) |
 | Two-finger drag | Scroll (camera zoom) |
 | Pencil hovering | Pointer follows |
-| Pencil touch | Left click (attack-move) |
+| Pencil tip tap | Right click there (move); hold to keep moving |
+| Pencil barrel double-tap | Left click at the pointer (attack-move) |
 | Pencil Pro squeeze | Mouse 4 |
-| Pencil double-tap | Mouse 5 |
 | Hard stab, three-finger swipes, pinch | Disabled |
 
 Orb walking one-handed: two fingers on the target, one finger where you want to step, repeat.
@@ -69,7 +69,7 @@ Orb walking one-handed: two fingers on the target, one finger where you want to 
 
 A rhythm-game trainer for mechanics. Nothing is sent to the Mac. Prompts appear as circles
 with a shrinking approach ring; hit them on the beat with the gesture the label asks for
-(ATK = two fingers or Pencil, MOVE = one finger, SUMM = three, ITEM = four). Each hit is
+(ATK = two fingers or Pencil barrel double-tap, MOVE = one finger or Pencil tip, SUMM = three, ITEM = four). Each hit is
 judged Perfect / Early / Late / Off-position / Miss, and the stats line tracks accuracy,
 perfects, streak, timing bias in ms and position error in points.
 

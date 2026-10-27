@@ -128,7 +128,7 @@ final class TrainingView: UIView {
             label.translatesAutoresizingMaskIntoConstraints = false
             addSubview(label)
         }
-        hint.text = "ATK = 2 fingers (or Pencil) · MOVE = 1 finger · SUMM = 3 · ITEM = 4"
+        hint.text = "ATK = 2 fingers or Pencil barrel double-tap · MOVE = 1 finger or Pencil tip · SUMM = 3 · ITEM = 4"
         NSLayoutConstraint.activate([
             drillButton.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -16),
             drillButton.centerXAnchor.constraint(equalTo: centerXAnchor, constant: -150),
@@ -203,7 +203,7 @@ final class TrainingView: UIView {
         switch gesture {
         case .aim: return
         case .tap(let n, let p): fingers = n; point = p
-        case .pencilTap(let p): fingers = 2; point = p
+        case .pencilTap(let p): fingers = 1; point = p
         }
         // Nearest unjudged prompt in time that accepts this gesture.
         let candidates = prompts.filter { !$0.judged && abs(now - $0.time) <= goodWindow && accepts($0.expect, fingers) }

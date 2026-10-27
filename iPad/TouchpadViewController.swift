@@ -106,6 +106,9 @@ final class TouchpadViewController: UIViewController {
     private var pencilConsumed = false
     private var pencilStart = CGPoint.zero
     private var pencilDownWork: DispatchWorkItem?
+    /// Which button the current Pencil touch is holding (left on Desktop, right = move in League).
+    private var pencilButton: MouseButton = .left
+    private var lastPencilPoint = CGPoint.zero
     private var lastOffset = TouchpadView.center
     private var suppressScroll = false
     private var inMomentum = false
@@ -328,14 +331,17 @@ final class TouchpadViewController: UIViewController {
     // MARK: Pencil
 
     @objc private func handleHover(_ g: UIHoverGestureRecognizer) {
-        guard mode != .training, g.state == .began || g.state == .changed else { return }
-        sendAbsolute(g.location(in: view))
+        guard g.state == .began || g.state == .changed else { return }
+        lastPencilPoint = g.location(in: view)
+        guard mode != .training else { return }
+        sendAbsolute(lastPencilPoint)
     }
 
     private func handlePencil(_ touch: UITouch, _ phase: UITouch.Phase) {
         let p = touch.location(in: view)
+        lastPencilPoint = p
         if mode == .training {
-            if phase == .began { trainer.handle(.pencilTap(p)) }
+            if phase == .began { trainer.handle(.tap(fingers: 1, at: p)) }   // tip tap = MOVE prompt
             return
         }
         switch phase {
@@ -370,7 +376,7 @@ final class TouchpadViewController: UIViewController {
             if !pencilConsumed {
                 if !pencilDownSent { commitPencilDown() }
                 sendAbsolute(p)
-                link.send(Packet(kind: .buttonUp, button: MouseButton.left.rawValue))
+                link.send(Packet(kind: .buttonUp, button: pencilButton.rawValue))
             }
             pencilTouch = nil
 
@@ -382,7 +388,8 @@ final class TouchpadViewController: UIViewController {
     private func commitPencilDown() {
         guard pencilTouch != nil, !pencilDownSent, !pencilConsumed else { return }
         pencilDownSent = true
-        link.send(Packet(kind: .buttonDown, button: MouseButton.left.rawValue))
+        pencilButton = mode == .league ? .right : .left
+        link.send(Packet(kind: .buttonDown, button: pencilButton.rawValue))
     }
 
     // MARK: League finger layout (raw touches)
@@ -567,7 +574,7 @@ final class TouchpadViewController: UIViewController {
                    "Fingers: tap jumps + clicks · 1 drag moves · 2 drag scrolls · 2 tap right-clicks · 3 swipe Spaces · pinch zooms"
         case .league:
             hint = "Finger: hold = aim · tap = move · 2-tap = attack-move · 3-tap = summoner (M4) · 4-tap = item (M5) · 2 drag = zoom\n" +
-                   "Pencil: hover aims · touch = attack-move · squeeze = M4 · double-tap = M5"
+                   "Pencil: hover aims · tip tap = move (hold to keep moving) · barrel double-tap = attack-move · squeeze = M4"
         case .training:
             hint = "Training: nothing is sent to the Mac. Pick a drill below, press Start, hit the prompts on the beat."
         }
@@ -628,7 +635,11 @@ extension TouchpadViewController: UIScrollViewDelegate {
 
 extension TouchpadViewController: UIPencilInteractionDelegate {
     func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveTap tap: UIPencilInteraction.Tap) {
-        click(mode == .league ? .forward : .right)
+        switch mode {
+        case .desktop: click(.right)
+        case .league: click(.left)                                                // attack-move at the pointer
+        case .training: trainer.handle(.tap(fingers: 2, at: lastPencilPoint))     // ATK prompt
+        }
     }
 
     func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze) {
