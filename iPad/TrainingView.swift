@@ -58,6 +58,9 @@ final class TrainingView: UIView {
     private let positionTolerance: CGFloat = 70
     private let promptRadius: CGFloat = 34
 
+    /// Where prompts may appear: the touchpad's mapped area, set by the controller.
+    var playArea = CGRect.zero
+
     // MARK: State
     private var drillIndex = 0
     private var drill: Drill { Drill.library[drillIndex] }
@@ -175,7 +178,7 @@ final class TrainingView: UIView {
         running = true
         startTime = CACurrentMediaTime() + 1.0
         nextCycle = 0
-        enemy = CGPoint(x: bounds.midX, y: bounds.midY)
+        enemy = CGPoint(x: area.midX, y: area.midY)
         startButton.setTitle("Stop", for: .normal)
         displayLink = CADisplayLink(target: self, selector: #selector(tick))
         displayLink?.add(to: .main, forMode: .common)
@@ -283,19 +286,29 @@ final class TrainingView: UIView {
         }
     }
 
+    /// Prompt area, inset so circles stay fully inside the mapped region.
+    private var area: CGRect {
+        let base = playArea.isEmpty ? bounds.insetBy(dx: 120, dy: 160) : playArea
+        let inset = promptRadius + 8
+        let r = base.insetBy(dx: inset, dy: inset)
+        return r.isNull || r.width <= 0 || r.height <= 0 ? base : r
+    }
+
     private func spawnCycle(_ cycle: Int) {
-        let margin: CGFloat = 120
-        let area = bounds.insetBy(dx: margin, dy: margin + 60)
+        let area = self.area
+        // Distances scale with the area so a small wrist-sized pad still gets real kiting motion.
+        let drift = min(area.width, area.height) * 0.18
+        let kite = min(area.width, area.height) * 0.45
         // The enemy drifts each cycle so you keep re-aiming; the retreat point is away from it.
         if cycle > 0 {
             let angle = Double.random(in: 0 ..< 2 * .pi)
-            enemy.x += CGFloat(cos(angle)) * 90
-            enemy.y += CGFloat(sin(angle)) * 90
+            enemy.x += CGFloat(cos(angle)) * drift
+            enemy.y += CGFloat(sin(angle)) * drift
         }
         enemy.x = min(max(enemy.x, area.minX), area.maxX)
         enemy.y = min(max(enemy.y, area.minY), area.maxY)
-        let awayAngle = atan2(enemy.y - bounds.midY, enemy.x - bounds.midX) + .pi + CGFloat.random(in: -0.6 ... 0.6)
-        var retreat = CGPoint(x: enemy.x + cos(awayAngle) * 240, y: enemy.y + sin(awayAngle) * 240)
+        let awayAngle = atan2(enemy.y - area.midY, enemy.x - area.midX) + .pi + CGFloat.random(in: -0.6 ... 0.6)
+        var retreat = CGPoint(x: enemy.x + cos(awayAngle) * kite, y: enemy.y + sin(awayAngle) * kite)
         retreat.x = min(max(retreat.x, area.minX), area.maxX)
         retreat.y = min(max(retreat.y, area.minY), area.maxY)
 

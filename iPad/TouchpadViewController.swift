@@ -47,6 +47,17 @@ final class TouchpadViewController: UIViewController {
         }
     }
 
+    /// Size of the mapped area as a fraction of the largest letterboxed fit, and where it sits.
+    /// Smaller areas let the fingers do the work without moving the arm.
+    private static let areaScales: [CGFloat] = [1.0, 0.8, 0.65, 0.5, 0.4, 0.3]
+    private static let anchorNames = ["Center", "Bottom right", "Bottom left", "Bottom center", "Right", "Left"]
+    private var areaScaleIndex = UserDefaults.standard.integer(forKey: "areaScaleIndex") {
+        didSet { UserDefaults.standard.set(areaScaleIndex, forKey: "areaScaleIndex"); updateActiveRect(); refreshAreaButtons() }
+    }
+    private var areaAnchor = UserDefaults.standard.integer(forKey: "areaAnchor") {
+        didSet { UserDefaults.standard.set(areaAnchor, forKey: "areaAnchor"); updateActiveRect(); refreshAreaButtons() }
+    }
+
     // MARK: Tunables
     private let trackpadSensitivity: CGFloat = 1.6
     private let scrollScale: CGFloat = 1.0
@@ -71,6 +82,8 @@ final class TouchpadViewController: UIViewController {
     private let dimButton = UIButton(type: .system)
     private let wiredButton = UIButton(type: .system)
     private let modeButton = UIButton(type: .system)
+    private let areaButton = UIButton(type: .system)
+    private let anchorButton = UIButton(type: .system)
     private let trainer = TrainingView()
     private var pinch: UIPinchGestureRecognizer!
     /// Recognizers that only make sense in Desktop mode; League handles fingers itself.
@@ -157,6 +170,9 @@ final class TouchpadViewController: UIViewController {
         configure(dimButton, title: "Dim screen", action: #selector(toggleDim))
         configure(wiredButton, title: "Prefer USB: off", action: #selector(toggleWired))
         configure(modeButton, title: mode.title, action: #selector(toggleMode))
+        configure(areaButton, title: "", action: #selector(cycleAreaScale))
+        configure(anchorButton, title: "", action: #selector(cycleAnchor))
+        refreshAreaButtons()
 
         let safe = view.safeAreaLayoutGuide
         NSLayoutConstraint.activate([
@@ -169,6 +185,10 @@ final class TouchpadViewController: UIViewController {
             wiredButton.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 16),
             modeButton.topAnchor.constraint(equalTo: wiredButton.bottomAnchor, constant: 4),
             modeButton.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 16),
+            areaButton.topAnchor.constraint(equalTo: modeButton.bottomAnchor, constant: 4),
+            areaButton.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 16),
+            anchorButton.topAnchor.constraint(equalTo: areaButton.bottomAnchor, constant: 4),
+            anchorButton.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 16),
         ])
         refreshHUD()
     }
@@ -252,8 +272,41 @@ final class TouchpadViewController: UIViewController {
             h = b.height
             w = h * aspect
         }
-        activeRect = CGRect(x: (b.width - w) / 2, y: (b.height - h) / 2, width: w, height: h)
+        let scale = Self.areaScales[min(max(areaScaleIndex, 0), Self.areaScales.count - 1)]
+        w *= scale
+        h *= scale
+        let margin: CGFloat = 24
+        let safe = view.safeAreaInsets
+        let minX = margin + safe.left, maxX = b.width - margin - safe.right - w
+        let minY = margin + safe.top + 100, maxY = b.height - margin - safe.bottom - h   // leave room for the HUD
+        var origin = CGPoint(x: (b.width - w) / 2, y: (b.height - h) / 2)
+        switch areaAnchor {
+        case 1: origin = CGPoint(x: maxX, y: maxY)
+        case 2: origin = CGPoint(x: minX, y: maxY)
+        case 3: origin = CGPoint(x: (b.width - w) / 2, y: maxY)
+        case 4: origin = CGPoint(x: maxX, y: (b.height - h) / 2)
+        case 5: origin = CGPoint(x: minX, y: (b.height - h) / 2)
+        default: break
+        }
+        origin.x = min(max(origin.x, minX), max(minX, maxX))
+        origin.y = min(max(origin.y, min(minY, maxY)), max(minY, maxY))
+        activeRect = CGRect(origin: origin, size: CGSize(width: w, height: h))
         outline.frame = activeRect
+        trainer.playArea = activeRect
+    }
+
+    @objc private func cycleAreaScale() {
+        areaScaleIndex = (areaScaleIndex + 1) % Self.areaScales.count
+    }
+
+    @objc private func cycleAnchor() {
+        areaAnchor = (areaAnchor + 1) % Self.anchorNames.count
+    }
+
+    private func refreshAreaButtons() {
+        let scale = Self.areaScales[min(max(areaScaleIndex, 0), Self.areaScales.count - 1)]
+        areaButton.setTitle("Area: \(Int(scale * 100))%", for: .normal)
+        anchorButton.setTitle("Anchor: \(Self.anchorNames[min(max(areaAnchor, 0), Self.anchorNames.count - 1)])", for: .normal)
     }
 
     private func sendAbsolute(_ p: CGPoint) {
@@ -484,6 +537,8 @@ final class TouchpadViewController: UIViewController {
         outline.alpha = dimmed ? 0 : 1
         wiredButton.alpha = dimmed ? 0.02 : 1
         modeButton.alpha = dimmed ? 0.02 : 1
+        areaButton.alpha = dimmed ? 0.02 : 1
+        anchorButton.alpha = dimmed ? 0.02 : 1
         dimButton.alpha = dimmed ? 0.1 : 1
     }
 
