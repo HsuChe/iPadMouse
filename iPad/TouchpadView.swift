@@ -34,7 +34,13 @@ final class TouchpadView: UIScrollView {
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        forward(touches, .moved)
+        // The Pencil samples faster than the display refreshes; coalesced touches carry the in-between samples.
+        for touch in touches where touch.type == .pencil {
+            let samples = event?.coalescedTouches(for: touch) ?? [touch]
+            for sample in samples { pencilHandler?(sample, .moved) }
+        }
+        let fingers = touches.filter { $0.type == .direct }
+        if !fingers.isEmpty { fingerHandler?(fingers, .moved) }
         super.touchesMoved(touches, with: event)
     }
 

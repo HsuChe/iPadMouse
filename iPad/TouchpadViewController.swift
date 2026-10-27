@@ -116,6 +116,9 @@ final class TouchpadViewController: UIViewController {
     private var pencilButton: MouseButton = .left
     private var lastPencilPoint = CGPoint.zero
     private var lastHoverSent: TimeInterval = 0
+    /// Keeps ProMotion at 120 Hz: input events are delivered in step with the display, and a static
+    /// black screen would otherwise let the panel idle down to 24 Hz and starve the pointer stream.
+    private var refreshLink: CADisplayLink?
     /// Hover samples arrive at up to 240 Hz; the Mac display only needs 120.
     private let hoverInterval: TimeInterval = 1.0 / 120.0
     private var lastOffset = TouchpadView.center
@@ -137,6 +140,11 @@ final class TouchpadViewController: UIViewController {
         setupOverlay()
         setupGestures()
         setupLink()
+        let link = CADisplayLink(target: self, selector: #selector(refreshTick))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 120, maximum: 120, preferred: 120)
+        link.add(to: .main, forMode: .common)
+        refreshLink = link
+
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(appWillResignActive), name: UIApplication.willResignActiveNotification, object: nil)
         center.addObserver(self, selector: #selector(appDidBecomeActive), name: UIApplication.didBecomeActiveNotification, object: nil)
@@ -337,6 +345,9 @@ final class TouchpadViewController: UIViewController {
         }
         link.start()
     }
+
+    /// Intentionally does nothing; the display link's existence is what holds the refresh rate.
+    @objc private func refreshTick() {}
 
     // MARK: Mapping
 
