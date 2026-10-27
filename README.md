@@ -65,6 +65,21 @@ spell and mouse 5 is item 1 (check `League of Legends.app/Contents/LoL/Config/in
 
 Orb walking one-handed: two fingers on the target, one finger where you want to step, repeat.
 
+### Training mode
+
+A rhythm-game trainer for mechanics. Nothing is sent to the Mac. Prompts appear as circles
+with a shrinking approach ring; hit them on the beat with the gesture the label asks for
+(ATK = two fingers or Pencil, MOVE = one finger, SUMM = three, ITEM = four). Each hit is
+judged Perfect / Early / Late / Off-position / Miss, and the stats line tracks accuracy,
+perfects, streak, timing bias in ms and position error in points.
+
+Drills live in `Drill.library` in `iPad/TrainingView.swift`: a name, a beat period, and steps
+at fractional offsets within the beat. Shipped drills: Orb Walk, Kite + Summoner, Burst Combo,
+Reaction. Slower / Faster scale the beat.
+
+Planned: key prompts (F1-F5 ally camera, QWER combos) once the Mac app relays keyboard events,
+and game-aware drills fed by League's local Live Client Data API.
+
 ### Both modes
 
 | Input | Result |

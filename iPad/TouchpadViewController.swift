@@ -17,9 +17,23 @@ import UIKit
 import QuartzCore
 
 enum PadMode: String {
-    case desktop, league
+    case desktop, league, training
 
-    var title: String { self == .desktop ? "Mode: Desktop" : "Mode: League" }
+    var title: String {
+        switch self {
+        case .desktop: return "Mode: Desktop"
+        case .league: return "Mode: League"
+        case .training: return "Mode: Training"
+        }
+    }
+
+    var next: PadMode {
+        switch self {
+        case .desktop: return .league
+        case .league: return .training
+        case .training: return .desktop
+        }
+    }
 }
 
 final class TouchpadViewController: UIViewController {
@@ -57,6 +71,7 @@ final class TouchpadViewController: UIViewController {
     private let dimButton = UIButton(type: .system)
     private let wiredButton = UIButton(type: .system)
     private let modeButton = UIButton(type: .system)
+    private let trainer = TrainingView()
     private var pinch: UIPinchGestureRecognizer!
     /// Recognizers that only make sense in Desktop mode; League handles fingers itself.
     private var desktopRecognizers: [UIGestureRecognizer] = []
@@ -125,6 +140,11 @@ final class TouchpadViewController: UIViewController {
         outline.layer.borderColor = UIColor(white: 0.25, alpha: 1).cgColor
         outline.layer.borderWidth = 1
         view.addSubview(outline)
+
+        trainer.frame = view.bounds
+        trainer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        trainer.isHidden = mode != .training
+        view.addSubview(trainer)
 
         hud.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         hud.textColor = UIColor(white: 0.45, alpha: 1)
@@ -198,6 +218,8 @@ final class TouchpadViewController: UIViewController {
         for recognizer in desktopRecognizers { recognizer.isEnabled = desktop }
         leagueActive.removeAll()
         leaguePoints.removeAll()
+        trainer.isHidden = mode != .training
+        if mode != .training { trainer.stop() }
     }
 
     private func setupLink() {
@@ -253,12 +275,16 @@ final class TouchpadViewController: UIViewController {
     // MARK: Pencil
 
     @objc private func handleHover(_ g: UIHoverGestureRecognizer) {
-        guard g.state == .began || g.state == .changed else { return }
+        guard mode != .training, g.state == .began || g.state == .changed else { return }
         sendAbsolute(g.location(in: view))
     }
 
     private func handlePencil(_ touch: UITouch, _ phase: UITouch.Phase) {
         let p = touch.location(in: view)
+        if mode == .training {
+            if phase == .began { trainer.handle(.pencilTap(p)) }
+            return
+        }
         switch phase {
         case .began:
             pencilTouch = touch
@@ -309,7 +335,7 @@ final class TouchpadViewController: UIViewController {
     // MARK: League finger layout (raw touches)
 
     private func handleFingers(_ touches: Set<UITouch>, _ phase: UITouch.Phase) {
-        guard mode == .league else { return }
+        guard mode != .desktop else { return }
         switch phase {
         case .began:
             if leagueActive.isEmpty {
@@ -326,7 +352,7 @@ final class TouchpadViewController: UIViewController {
             leagueMaxFingers = max(leagueMaxFingers, leagueActive.count)
             // A lone finger aims immediately: the pointer is where you touch.
             if leagueActive.count == 1, let t = touches.first {
-                sendAbsolute(t.location(in: view))
+                dispatch(.aim(t.location(in: view)))
             }
 
         case .moved:
@@ -338,7 +364,7 @@ final class TouchpadViewController: UIViewController {
                 if hypot(p.x - leagueStartPoint.x, p.y - leagueStartPoint.y) > tapSlop {
                     leagueMoved = true
                 }
-                sendAbsolute(p)
+                dispatch(.aim(p))
             }
 
         case .ended, .cancelled:
@@ -353,21 +379,32 @@ final class TouchpadViewController: UIViewController {
             leaguePoints.removeAll()
             // The scroll view cancels our touches when a two-finger drag becomes a scroll.
             guard phase != .cancelled else { return }
-            switch fingers {
-            case 1:
-                if duration < tapMaxDuration, !leagueMoved { click(.right) }        // move here
-            case 2:
-                if duration < multiTapMaxDuration {
-                    sendAbsolute(centroid(points))
-                    click(.left)                                                     // attack-move here
-                }
-            case 3:
-                if duration < multiTapMaxDuration { click(.back) }                   // mouse 4: summoner
-            default:
-                if duration < multiTapMaxDuration { click(.forward) }                // mouse 5: item
-            }
+            let limit = fingers == 1 ? tapMaxDuration : multiTapMaxDuration
+            guard duration < limit, fingers > 1 || !leagueMoved else { return }
+            dispatch(.tap(fingers: fingers, at: centroid(points)))
 
         default:
+            break
+        }
+    }
+
+    /// League sends gestures to the Mac; Training feeds them to the trainer instead.
+    private func dispatch(_ gesture: FingerGesture) {
+        if mode == .training {
+            trainer.handle(gesture)
+            return
+        }
+        switch gesture {
+        case .aim(let p):
+            sendAbsolute(p)
+        case .tap(let fingers, let p):
+            switch fingers {
+            case 1: sendAbsolute(p); click(.right)      // move here
+            case 2: sendAbsolute(p); click(.left)       // attack-move here
+            case 3: click(.back)                        // mouse 4: summoner
+            default: click(.forward)                    // mouse 5: item
+            }
+        case .pencilTap:
             break
         }
     }
@@ -459,7 +496,7 @@ final class TouchpadViewController: UIViewController {
     }
 
     @objc private func toggleMode() {
-        mode = mode == .desktop ? .league : .desktop
+        mode = mode.next
     }
 
     @objc private func toggleWired() {
@@ -476,8 +513,10 @@ final class TouchpadViewController: UIViewController {
         case .league:
             hint = "Finger: hold = aim · tap = move · 2-tap = attack-move · 3-tap = summoner (M4) · 4-tap = item (M5) · 2 drag = zoom\n" +
                    "Pencil: hover aims · touch = attack-move · squeeze = M4 · double-tap = M5"
+        case .training:
+            hint = "Training: nothing is sent to the Mac. Pick a drill below, press Start, hit the prompts on the beat."
         }
-        hud.text = status + "\n" + hint
+        hud.text = (mode == .training ? "" : status + "\n") + hint
     }
 }
 

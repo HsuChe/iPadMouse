@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1C639F4ADCBA3B699FBC461D /* TrainingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC3507D0426D43EDBF48A317 /* TrainingView.swift */; };
 		1CC2D7C9AF39A6978ACCD903 /* Injector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B547DAE935C6FCD5926398F /* Injector.swift */; };
 		2F37FCC6B2334650199E4874 /* TouchpadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76816A4D8439AD3C1F032366 /* TouchpadView.swift */; };
 		35C24348A3D7CE09455C4B19 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B7593BF5F22370BDAB3325F /* AppDelegate.swift */; };
@@ -30,6 +31,7 @@
 		9B547DAE935C6FCD5926398F /* Injector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Injector.swift; sourceTree = "<group>"; };
 		AE1861251E38EAC5E596480A /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		AF995D8B88FC1BFB3C8D9B3A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		BC3507D0426D43EDBF48A317 /* TrainingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainingView.swift; sourceTree = "<group>"; };
 		BDB34486D625648CB6C1C7F4 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		C3E2D8DB5B9EA8D473FDFC58 /* Link.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Link.swift; sourceTree = "<group>"; };
 		C42E87793974740F977FC2BB /* TouchpadViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchpadViewController.swift; sourceTree = "<group>"; };
@@ -86,6 +88,7 @@
 				AE1861251E38EAC5E596480A /* SceneDelegate.swift */,
 				76816A4D8439AD3C1F032366 /* TouchpadView.swift */,
 				C42E87793974740F977FC2BB /* TouchpadViewController.swift */,
+				BC3507D0426D43EDBF48A317 /* TrainingView.swift */,
 			);
 			path = iPad;
 			sourceTree = "<group>";
@@ -189,6 +192,7 @@
 				596BDFD14E56F0638D4276AD /* SceneDelegate.swift in Sources */,
 				2F37FCC6B2334650199E4874 /* TouchpadView.swift in Sources */,
 				D31F508258175BB244976C30 /* TouchpadViewController.swift in Sources */,
+				1C639F4ADCBA3B699FBC461D /* TrainingView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
