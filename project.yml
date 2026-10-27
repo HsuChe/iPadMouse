@@ -1,0 +1,71 @@
+# XcodeGen spec. Run tools/generate.sh to produce iPadMouse.xcodeproj.
+name: iPadMouse
+options:
+  bundleIdPrefix: com.hsuche.ipadmouse
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: GSZ52S6W6B
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    GENERATE_INFOPLIST_FILE: NO
+targets:
+  iPadMouse:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.5"
+    sources:
+      - path: iPad
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hsuche.ipadmouse.ipad
+        TARGETED_DEVICE_FAMILY: "2"
+        SUPPORTS_MACCATALYST: NO
+    info:
+      path: iPad/Info.plist
+      properties:
+        CFBundleDisplayName: iPad Mouse
+        UILaunchScreen: {}
+        UIRequiresFullScreen: true
+        UIStatusBarHidden: true
+        UIViewControllerBasedStatusBarAppearance: true
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: Default
+                UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).SceneDelegate
+        NSLocalNetworkUsageDescription: iPad Mouse looks for the companion app on your Mac over Wi-Fi or USB.
+        NSBonjourServices:
+          - _ipadmouse._udp
+  iPadMouseMac:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Mac
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_NAME: iPad Mouse
+        PRODUCT_BUNDLE_IDENTIFIER: com.hsuche.ipadmouse.mac
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_APP_SANDBOX: NO
+    info:
+      path: Mac/Info.plist
+      properties:
+        LSUIElement: true
+        NSPrincipalClass: NSApplication
+        LSMinimumSystemVersion: "14.0"
+        NSLocalNetworkUsageDescription: iPad Mouse advertises itself to your iPad over Wi-Fi or USB.
+        NSBonjourServices:
+          - _ipadmouse._udp

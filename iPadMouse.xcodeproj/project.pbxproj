@@ -1,0 +1,430 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1CC2D7C9AF39A6978ACCD903 /* Injector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B547DAE935C6FCD5926398F /* Injector.swift */; };
+		2F37FCC6B2334650199E4874 /* TouchpadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76816A4D8439AD3C1F032366 /* TouchpadView.swift */; };
+		35C24348A3D7CE09455C4B19 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B7593BF5F22370BDAB3325F /* AppDelegate.swift */; };
+		36572C76E949C21398855849 /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB135774DD64B47C7B7DCE8 /* Protocol.swift */; };
+		596BDFD14E56F0638D4276AD /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1861251E38EAC5E596480A /* SceneDelegate.swift */; };
+		5BB9FD45FAF062DEFA292462 /* Receiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC3E38A2FE23A6C7394879D7 /* Receiver.swift */; };
+		6EAE3F92561A70AC6AC09DAF /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB135774DD64B47C7B7DCE8 /* Protocol.swift */; };
+		760A7455452457BC4E48C4FA /* Link.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3E2D8DB5B9EA8D473FDFC58 /* Link.swift */; };
+		7EDCAAF4FAFC9EDC7F037299 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDB34486D625648CB6C1C7F4 /* AppDelegate.swift */; };
+		A0EF18962DBC6B5F0036F40E /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F42628B0A2384349E06E8CF /* main.swift */; };
+		D31F508258175BB244976C30 /* TouchpadViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42E87793974740F977FC2BB /* TouchpadViewController.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		3AB135774DD64B47C7B7DCE8 /* Protocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol.swift; sourceTree = "<group>"; };
+		3B00B4338C24BDCD3EB888DE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		4B7593BF5F22370BDAB3325F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		4F42628B0A2384349E06E8CF /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		5ABC2704BF6AA5B7C1EA1E77 /* iPadMouseMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iPadMouseMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		76816A4D8439AD3C1F032366 /* TouchpadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchpadView.swift; sourceTree = "<group>"; };
+		9B547DAE935C6FCD5926398F /* Injector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Injector.swift; sourceTree = "<group>"; };
+		AE1861251E38EAC5E596480A /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		AF995D8B88FC1BFB3C8D9B3A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		BDB34486D625648CB6C1C7F4 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		C3E2D8DB5B9EA8D473FDFC58 /* Link.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Link.swift; sourceTree = "<group>"; };
+		C42E87793974740F977FC2BB /* TouchpadViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchpadViewController.swift; sourceTree = "<group>"; };
+		D0FAEB79DD723F97A1787AF7 /* iPadMouse.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = iPadMouse.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FC3E38A2FE23A6C7394879D7 /* Receiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Receiver.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		24E5F8D26231804A84638F21 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				D0FAEB79DD723F97A1787AF7 /* iPadMouse.app */,
+				5ABC2704BF6AA5B7C1EA1E77 /* iPadMouseMac.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		930188D34657B6A48E75DE5B = {
+			isa = PBXGroup;
+			children = (
+				CB91504E71FFAEDC9FD42E56 /* iPad */,
+				B6E9DE86260955878D667FB2 /* Mac */,
+				C3D1AD4FE8CF5E8872B0887A /* Shared */,
+				24E5F8D26231804A84638F21 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		B6E9DE86260955878D667FB2 /* Mac */ = {
+			isa = PBXGroup;
+			children = (
+				4B7593BF5F22370BDAB3325F /* AppDelegate.swift */,
+				AF995D8B88FC1BFB3C8D9B3A /* Info.plist */,
+				9B547DAE935C6FCD5926398F /* Injector.swift */,
+				4F42628B0A2384349E06E8CF /* main.swift */,
+				FC3E38A2FE23A6C7394879D7 /* Receiver.swift */,
+			);
+			path = Mac;
+			sourceTree = "<group>";
+		};
+		C3D1AD4FE8CF5E8872B0887A /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				3AB135774DD64B47C7B7DCE8 /* Protocol.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		CB91504E71FFAEDC9FD42E56 /* iPad */ = {
+			isa = PBXGroup;
+			children = (
+				BDB34486D625648CB6C1C7F4 /* AppDelegate.swift */,
+				3B00B4338C24BDCD3EB888DE /* Info.plist */,
+				C3E2D8DB5B9EA8D473FDFC58 /* Link.swift */,
+				AE1861251E38EAC5E596480A /* SceneDelegate.swift */,
+				76816A4D8439AD3C1F032366 /* TouchpadView.swift */,
+				C42E87793974740F977FC2BB /* TouchpadViewController.swift */,
+			);
+			path = iPad;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4C4F7C47DB5B02BDBBF7A4AA /* iPadMouse */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 899F9C6228DBD380599CC4F4 /* Build configuration list for PBXNativeTarget "iPadMouse" */;
+			buildPhases = (
+				34F53ADF3AD5D3C69F587A63 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = iPadMouse;
+			packageProductDependencies = (
+			);
+			productName = iPadMouse;
+			productReference = D0FAEB79DD723F97A1787AF7 /* iPadMouse.app */;
+			productType = "com.apple.product-type.application";
+		};
+		94F91A093807E2819B6DA902 /* iPadMouseMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D25B8B09D832BF10F173EF64 /* Build configuration list for PBXNativeTarget "iPadMouseMac" */;
+			buildPhases = (
+				2F946F33888E6A381D17435D /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = iPadMouseMac;
+			packageProductDependencies = (
+			);
+			productName = iPadMouseMac;
+			productReference = 5ABC2704BF6AA5B7C1EA1E77 /* iPadMouseMac.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F4AEB930F8DE6893AAF58EDF /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					4C4F7C47DB5B02BDBBF7A4AA = {
+						DevelopmentTeam = GSZ52S6W6B;
+						ProvisioningStyle = Automatic;
+					};
+					94F91A093807E2819B6DA902 = {
+						DevelopmentTeam = GSZ52S6W6B;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 1B97B1FCF647DECB1E85C677 /* Build configuration list for PBXProject "iPadMouse" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 930188D34657B6A48E75DE5B;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 24E5F8D26231804A84638F21 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				4C4F7C47DB5B02BDBBF7A4AA /* iPadMouse */,
+				94F91A093807E2819B6DA902 /* iPadMouseMac */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		2F946F33888E6A381D17435D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				35C24348A3D7CE09455C4B19 /* AppDelegate.swift in Sources */,
+				1CC2D7C9AF39A6978ACCD903 /* Injector.swift in Sources */,
+				36572C76E949C21398855849 /* Protocol.swift in Sources */,
+				5BB9FD45FAF062DEFA292462 /* Receiver.swift in Sources */,
+				A0EF18962DBC6B5F0036F40E /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		34F53ADF3AD5D3C69F587A63 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7EDCAAF4FAFC9EDC7F037299 /* AppDelegate.swift in Sources */,
+				760A7455452457BC4E48C4FA /* Link.swift in Sources */,
+				6EAE3F92561A70AC6AC09DAF /* Protocol.swift in Sources */,
+				596BDFD14E56F0638D4276AD /* SceneDelegate.swift in Sources */,
+				2F37FCC6B2334650199E4874 /* TouchpadView.swift in Sources */,
+				D31F508258175BB244976C30 /* TouchpadViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		48673108C6BD309331083138 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = Mac/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hsuche.ipadmouse.mac;
+				PRODUCT_NAME = "iPad Mouse";
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		8AF5D9F51C08E46928EA3164 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = iPad/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hsuche.ipadmouse.ipad;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Debug;
+		};
+		991138002CCF6F465D1F6962 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = GSZ52S6W6B;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		B5DCAFC7BF529BC47A70D7D5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = iPad/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hsuche.ipadmouse.ipad;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Release;
+		};
+		D6126A61038C0591AC58EC9D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = GSZ52S6W6B;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		E07B8D9EA41C19A2284E2AB6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = Mac/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hsuche.ipadmouse.mac;
+				PRODUCT_NAME = "iPad Mouse";
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1B97B1FCF647DECB1E85C677 /* Build configuration list for PBXProject "iPadMouse" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D6126A61038C0591AC58EC9D /* Debug */,
+				991138002CCF6F465D1F6962 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		899F9C6228DBD380599CC4F4 /* Build configuration list for PBXNativeTarget "iPadMouse" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8AF5D9F51C08E46928EA3164 /* Debug */,
+				B5DCAFC7BF529BC47A70D7D5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D25B8B09D832BF10F173EF64 /* Build configuration list for PBXNativeTarget "iPadMouseMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E07B8D9EA41C19A2284E2AB6 /* Debug */,
+				48673108C6BD309331083138 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = F4AEB930F8DE6893AAF58EDF /* Project object */;
+}

@@ -1,0 +1,6 @@
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+tools/xcodegen/
+.DS_Store
