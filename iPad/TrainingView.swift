@@ -68,14 +68,16 @@ final class TrainingView: UIView {
 
     // Chase. Distances are fractions of the pad's short side so a wrist-sized area plays the same.
     private let chaseWindup: Double = 0.12          // attack wind-up; a move command inside it cancels
-    private let chaseAttackRangeRatio: CGFloat = 0.30
+    private let chaseAttackRangeRatio: CGFloat = 0.33
     private let chaseChampionSpeedRatio: CGFloat = 0.55   // pad short sides per second
     private let chaseEnemySpeedRatio: CGFloat = 0.50      // slower than you, so kiting works
     private let chaseFlashRangeRatio: CGFloat = 0.25
     private let chaseFlashCooldown: Double = 10
     private let chaseEnemyHits = 4                  // shots to kill the enemy: the goal per round
     private let chaseBulletTime: Double = 0.18      // bullet flight time to the enemy
-    private let chaseSecondsToDie: Double = 0.35    // time in the enemy's reach before the round is lost
+    private let chaseEnemyAttackRatio: Double = 1.5 // enemy attack cooldown relative to yours
+    private let chaseEnemyWindup: Double = 0.25     // enemy swing wind-up (the swell before the lunge)
+    private let chaseEnemyHitsToKill = 3            // enemy hits you survive before the round is lost
 
     /// Where prompts may appear: the touchpad's mapped area, set by the controller.
     var playArea = CGRect.zero
@@ -240,7 +242,7 @@ final class TrainingView: UIView {
         switch drill.kind {
         case .chase:
             hint.text = "Blue is you, red runs at you. 1-finger tap / Pencil tip = move · 2 fingers, firm press or Pencil double-tap = attack-move · 3 fingers / squeeze = Flash\n" +
-                        "Land 4 shots before it reaches you. Attack-move when the ring is white, move away while the orange ring refills. Moving during the wind-up cancels the shot."
+                        "Land 4 shots before it reaches you; it swells before each swing and three swings kill you. Attack-move when the ring is white, move away while the orange ring refills. Moving during the wind-up cancels the shot."
         case .rhythm:
             hint.text = "ATK = firm press, 2 fingers or Pencil barrel double-tap · MOVE = 1-finger tap or Pencil tip · SUMM = 3 · ITEM = 4"
         }
@@ -479,8 +481,14 @@ final class TrainingView: UIView {
         var lastTick: Double = 0
         var bullet: (from: CGPoint, launchedAt: Double)?
         var targetShownAt: Double = -1
+        var enemyWindupEnd: Double?
+        var enemyAttackReadyAt: Double = 0
+        var enemyHitAt: Double = -1
+        var hitsTaken = 0
+        var shotsBeforeContact: Int?            // shots landed before the enemy first hit you
         // Stats
         var roundShots = 0, bestRoundShots = 0, lastRoundShots = 0, rounds = 0, totalRoundShots = 0
+        var lastClean = 0, bestClean = 0, totalClean = 0
         var kills = 0, caught = 0, attacks = 0, cancels = 0
         var cooldowns = 0, kitedCooldowns = 0
         var readyDelaySum: Double = 0, readyDelays = 0
@@ -491,6 +499,7 @@ final class TrainingView: UIView {
     private let enemyLayer = CAShapeLayer()
     private let rangeLayer = CAShapeLayer()
     private let cooldownLayer = CAShapeLayer()
+    private let enemyCooldownLayer = CAShapeLayer()
     private let targetLayer = CAShapeLayer()
     private let bulletLayer = CAShapeLayer()
     private let championHPBack = CALayer(), championHPFill = CALayer()
@@ -535,6 +544,11 @@ final class TrainingView: UIView {
         cooldownLayer.lineWidth = 4
         cooldownLayer.lineCap = .round
         cooldownLayer.strokeEnd = 0
+        enemyCooldownLayer.path = cooldownLayer.path
+        enemyCooldownLayer.fillColor = UIColor.clear.cgColor
+        enemyCooldownLayer.lineWidth = 4
+        enemyCooldownLayer.lineCap = .round
+        enemyCooldownLayer.strokeEnd = 0
 
         targetLayer.path = UIBezierPath(ovalIn: CGRect(x: -8, y: -8, width: 16, height: 16)).cgPath
         targetLayer.fillColor = UIColor.clear.cgColor
@@ -561,24 +575,24 @@ final class TrainingView: UIView {
         enemyHPFill.backgroundColor = UIColor.systemRed.cgColor
 
         if !chaseInstalled {
-            for l in [rangeLayer, targetLayer, bulletLayer, cooldownLayer, enemyLayer, championLayer,
+            for l in [rangeLayer, targetLayer, bulletLayer, cooldownLayer, enemyCooldownLayer, enemyLayer, championLayer,
                       championHPBack, championHPFill, enemyHPBack, enemyHPFill] {
                 still(l)
             }
-            for l in [rangeLayer, targetLayer, bulletLayer, cooldownLayer, enemyLayer, championLayer,
+            for l in [rangeLayer, targetLayer, bulletLayer, cooldownLayer, enemyCooldownLayer, enemyLayer, championLayer,
                       championHPBack, enemyHPBack] {
                 layer.insertSublayer(l, below: cursorLayer)
             }
             chaseInstalled = true
         }
-        for l in [rangeLayer, cooldownLayer, enemyLayer, championLayer, championHPBack, enemyHPBack] {
+        for l in [rangeLayer, cooldownLayer, enemyCooldownLayer, enemyLayer, championLayer, championHPBack, enemyHPBack] {
             l.isHidden = false
         }
     }
 
     private func chaseTeardown() {
         guard chaseInstalled else { return }
-        for l in [rangeLayer, targetLayer, bulletLayer, cooldownLayer, enemyLayer, championLayer,
+        for l in [rangeLayer, targetLayer, bulletLayer, cooldownLayer, enemyCooldownLayer, enemyLayer, championLayer,
                   championHPBack, enemyHPBack] {
             l.isHidden = true
         }
@@ -600,6 +614,11 @@ final class TrainingView: UIView {
         chase.inRangeSince = nil
         chase.bullet = nil
         chase.roundShots = 0
+        chase.hitsTaken = 0
+        chase.shotsBeforeContact = nil
+        chase.enemyWindupEnd = nil
+        chase.enemyAttackReadyAt = now
+        chase.enemyHitAt = -1
         chaseSpawnEnemy()
     }
 
@@ -608,6 +627,10 @@ final class TrainingView: UIView {
         chase.lastRoundShots = chase.roundShots
         chase.totalRoundShots += chase.roundShots
         chase.bestRoundShots = max(chase.bestRoundShots, chase.roundShots)
+        let clean = chase.shotsBeforeContact ?? chase.roundShots
+        chase.lastClean = clean
+        chase.totalClean += clean
+        chase.bestClean = max(chase.bestClean, clean)
     }
 
     /// The enemy appears on the edge of the pad, as far from you as a few random picks allow.
@@ -684,7 +707,7 @@ final class TrainingView: UIView {
             chase.jukeAngle = CGFloat.random(in: -0.6 ... 0.6)
             chase.nextJuke = now + Double.random(in: 0.5 ... 1.0)
         }
-        if distance > reach * 0.9 {
+        if distance > reach * 0.9, chase.enemyWindupEnd == nil {              // plants its feet to swing
             var angle = atan2(dy, dx)
             if distance > reach * 2.5 { angle += chase.jukeAngle }
             let step = min(unit * chaseEnemySpeedRatio * speedScale * CGFloat(dt), distance - reach * 0.9)
@@ -724,20 +747,33 @@ final class TrainingView: UIView {
             chaseBulletLands(now: now)
         }
 
-        // Round lost once the enemy reaches you.
-        if distance <= reach {
-            chase.championHP -= CGFloat(dt / chaseSecondsToDie)
-            if chase.championHP <= 0 {
-                chase.caught += 1
-                chaseEndRound()
-                caption("CAUGHT · \(chase.roundShots) shots", color: .systemRed, at: chase.champion, now: now)
-                AudioServicesPlaySystemSound(1053)
-                chaseResetRound(now: now)
-                refreshStats()
-            }
+        // Enemy swings: winds up in reach, lands at the end of the wind-up even if you step away.
+        let enemyWindup = chaseEnemyWindup * tempo
+        if let end = chase.enemyWindupEnd {
+            if now >= end { chaseEnemyHits(now: now, cooldown: cooldown * chaseEnemyAttackRatio) }
+        } else if distance <= reach, now >= chase.enemyAttackReadyAt {
+            chase.enemyWindupEnd = now + enemyWindup
         }
 
-        chaseDraw(now: now, inRange: inRange, ready: ready, cooldown: cooldown, windup: windup)
+        chaseDraw(now: now, inRange: inRange, ready: ready, cooldown: cooldown, windup: windup, enemyWindup: enemyWindup)
+    }
+
+    private func chaseEnemyHits(now: Double, cooldown: Double) {
+        chase.enemyWindupEnd = nil
+        chase.enemyAttackReadyAt = now + cooldown
+        chase.enemyHitAt = now
+        chase.hitsTaken += 1
+        if chase.shotsBeforeContact == nil { chase.shotsBeforeContact = chase.roundShots }
+        chase.championHP -= 1 / CGFloat(chaseEnemyHitsToKill)
+        AudioServicesPlaySystemSound(1105)
+        if chase.championHP <= 0.001 {
+            chase.caught += 1
+            chaseEndRound()
+            caption("CAUGHT · \(chase.roundShots) shots", color: .systemRed, at: chase.champion, now: now)
+            AudioServicesPlaySystemSound(1053)
+            chaseResetRound(now: now)
+        }
+        refreshStats()
     }
 
     private func chaseBeginWindup(now: Double, windup: Double) {
@@ -794,11 +830,41 @@ final class TrainingView: UIView {
         p.y = min(max(p.y, area.minY), area.maxY)
     }
 
-    private func chaseDraw(now: Double, inRange: Bool, ready: Bool, cooldown: Double, windup: Double) {
+    private func chaseDraw(now: Double, inRange: Bool, ready: Bool, cooldown: Double, windup: Double, enemyWindup: Double) {
         championLayer.position = chase.champion
-        enemyLayer.position = chase.enemy
         rangeLayer.position = chase.champion
         cooldownLayer.position = chase.champion
+        enemyCooldownLayer.position = chase.enemy
+
+        // Enemy swing animation: swells through the wind-up, lunges at you on the hit.
+        var enemyPos = chase.enemy
+        var enemyScale: CGFloat = 1
+        if let end = chase.enemyWindupEnd {
+            let progress = CGFloat(1 - max(0, (end - now) / enemyWindup))
+            enemyScale = 1 + 0.4 * progress
+            enemyCooldownLayer.strokeColor = UIColor.systemRed.cgColor
+            enemyCooldownLayer.strokeEnd = progress
+        } else {
+            enemyCooldownLayer.strokeColor = UIColor.systemRed.withAlphaComponent(0.45).cgColor
+            let enemyCooldown = cooldown * chaseEnemyAttackRatio
+            enemyCooldownLayer.strokeEnd = now >= chase.enemyAttackReadyAt ? 0
+                : CGFloat(1 - max(0, (chase.enemyAttackReadyAt - now) / enemyCooldown))
+        }
+        let sinceHit = now - chase.enemyHitAt
+        if chase.enemyHitAt >= 0, sinceHit < 0.15 {
+            let lunge = reach * 0.6 * CGFloat(1 - sinceHit / 0.15)
+            let dx = chase.champion.x - chase.enemy.x, dy = chase.champion.y - chase.enemy.y
+            let d = max(hypot(dx, dy), 0.001)
+            enemyPos.x += dx / d * lunge
+            enemyPos.y += dy / d * lunge
+            championLayer.strokeColor = UIColor.systemRed.cgColor
+            championLayer.lineWidth = 4
+        } else {
+            championLayer.strokeColor = UIColor.white.cgColor
+            championLayer.lineWidth = 1.5
+        }
+        enemyLayer.position = enemyPos
+        enemyLayer.transform = CATransform3DMakeScale(enemyScale, enemyScale, 1)
         let r = dotRadius
         championHPBack.position = CGPoint(x: chase.champion.x, y: chase.champion.y - r - 10)
         enemyHPBack.position = CGPoint(x: chase.enemy.x, y: chase.enemy.y - r - 10)
@@ -876,9 +942,10 @@ final class TrainingView: UIView {
         if drill.kind == .chase {
             let kited = chase.cooldowns == 0 ? 0 : chase.kitedCooldowns * 100 / chase.cooldowns
             let delay = chase.readyDelays == 0 ? 0 : Int(chase.readyDelaySum / Double(chase.readyDelays) * 1000)
-            let avg = chase.rounds == 0 ? 0 : Double(chase.totalRoundShots) / Double(chase.rounds)
-            stats.text = String(format: "%@ · attack every %.2fs · this round %d shots · last %d · best %d · avg %.1f · goal 4\nkills %d · caught %d · cancelled %d · kited during %d%% of cooldowns · ready → attack %d ms",
-                                drill.name, period, chase.roundShots, chase.lastRoundShots, chase.bestRoundShots, avg,
+            let avg = chase.rounds == 0 ? 0 : Double(chase.totalClean) / Double(chase.rounds)
+            stats.text = String(format: "%@ · you %.2fs / enemy %.2fs · this round %d shots, %d hits taken · shots before contact: last %d · best %d · avg %.1f · goal 4\nkills %d · caught %d · cancelled %d · kited during %d%% of cooldowns · ready → attack %d ms",
+                                drill.name, period, period * chaseEnemyAttackRatio, chase.roundShots, chase.hitsTaken,
+                                chase.lastClean, chase.bestClean, avg,
                                 chase.kills, chase.caught, chase.cancels, kited, delay)
             return
         }

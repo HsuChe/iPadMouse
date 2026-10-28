@@ -81,10 +81,13 @@ the edge of the pad, slightly slower than you walk. The commands are the League 
 
 The dashed ring is your attack range (grey out of range, yellow in range but cooling, white when
 you can shoot). The ring around your dot fills orange during the cooldown and red during the
-wind-up; a move command during the wind-up cancels the shot, exactly as in game. A round ends
-when the enemy touches you (CAUGHT) or takes four shots (KILL). The stats line tracks shots per
-round, kills, times caught, cancelled shots, the share of cooldowns you moved during, and how long
-each shot sat ready before you used it. Slower / Faster scale every speed and cooldown together.
+wind-up; a move command during the wind-up cancels the shot, exactly as in game. The enemy
+attacks in melee reach with a cooldown 1.5 times yours: it plants its feet and swells through a
+wind-up, then lunges, and the hit lands even if you step away mid-swing. Three hits lose the round
+(CAUGHT); four of your shots win it (KILL). The stats line tracks shots before the enemy first
+touched you (last, best, average), hits taken, kills, times caught, cancelled shots, the share of
+cooldowns you moved during, and how long each shot sat ready before you used it. Slower / Faster
+scale every speed and cooldown together.
 
 The other drills are rhythm games: prompts appear as circles with a shrinking approach ring; hit
 them on the beat with the gesture the label asks for (ATK = two fingers or Pencil double-tap,
