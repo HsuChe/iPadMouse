@@ -1,6 +1,9 @@
-// Rhythm-game style trainer. Shows prompts (where to tap and with how many fingers),
-// judges timing and position, and keeps running stats. Drills are data: a period plus
-// steps at fractional offsets, so new mechanics are a few lines each.
+// Trainer for League mechanics. Two kinds of drill:
+//  - rhythm drills: prompts appear on a beat (where to tap, with how many fingers) and
+//    timing/position are judged like a rhythm game;
+//  - the Chase drill: a live simulation of orb walking. Your champion and an enemy are dots
+//    on the pad, both react to the same commands League would get, and the enemy runs at you.
+// Drills are data where possible, so new mechanics are a few lines each.
 
 import UIKit
 import AudioToolbox
@@ -24,12 +27,16 @@ struct DrillStep {
 }
 
 struct Drill {
+    enum Kind { case rhythm, chase }
     let name: String
+    /// Beat period for rhythm drills; attack cooldown for the chase.
     let period: Double
     let steps: [DrillStep]
+    var kind: Kind = .rhythm
 
     static let library: [Drill] = [
-        Drill(name: "Orb Walk", period: 0.75, steps: [
+        Drill(name: "Chase", period: 0.75, steps: [], kind: .chase),
+        Drill(name: "Orb Walk (beat)", period: 0.75, steps: [
             DrillStep(expect: .fingers(2), placement: .enemy,   offset: 0.0,  label: "ATK"),
             DrillStep(expect: .fingers(1), placement: .retreat, offset: 0.45, label: "MOVE"),
         ]),
@@ -59,8 +66,28 @@ final class TrainingView: UIView {
     private let positionTolerance: CGFloat = 70
     private let promptRadius: CGFloat = 34
 
+    // Chase. Distances are fractions of the pad's short side so a wrist-sized area plays the same.
+    private let chaseWindup: Double = 0.12          // attack wind-up; a move command inside it cancels
+    private let chaseAttackRangeRatio: CGFloat = 0.30
+    private let chaseChampionSpeedRatio: CGFloat = 0.55   // pad short sides per second
+    private let chaseEnemySpeedRatio: CGFloat = 0.50      // slower than you, so kiting works
+    private let chaseFlashRangeRatio: CGFloat = 0.25
+    private let chaseFlashCooldown: Double = 10
+    private let chaseEnemyHits = 4                  // shots to kill the enemy: the goal per round
+    private let chaseBulletTime: Double = 0.18      // bullet flight time to the enemy
+    private let chaseSecondsToDie: Double = 0.35    // time in the enemy's reach before the round is lost
+
     /// Where prompts may appear: the touchpad's mapped area, set by the controller.
     var playArea = CGRect.zero
+
+    /// Pencil hover position, drawn as a small ring so you can see where you are aiming.
+    var cursor: CGPoint? {
+        didSet {
+            guard let c = cursor else { cursorLayer.opacity = 0; return }
+            cursorLayer.position = c
+            cursorLayer.opacity = running ? 0.9 : 0
+        }
+    }
 
     // MARK: State
     private var drillIndex = 0
@@ -74,7 +101,7 @@ final class TrainingView: UIView {
     private var enemy = CGPoint.zero
     private var displayLink: CADisplayLink?
 
-    // Stats
+    // Stats (rhythm)
     private var hits = 0, perfects = 0, misses = 0, strays = 0
     private var streak = 0, bestStreak = 0
     private var offsetSum: Double = 0, absOffsetSum: Double = 0, positionSum: CGFloat = 0
@@ -101,6 +128,7 @@ final class TrainingView: UIView {
     private let startButton = UIButton(type: .system)
     private let stats = UILabel()
     private let hint = UILabel()
+    private let cursorLayer = CAShapeLayer()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -129,7 +157,6 @@ final class TrainingView: UIView {
             label.translatesAutoresizingMaskIntoConstraints = false
             addSubview(label)
         }
-        hint.text = "ATK = firm press, 2 fingers or Pencil barrel double-tap · MOVE = 1-finger tap or Pencil tip · SUMM = 3 · ITEM = 4"
         NSLayoutConstraint.activate([
             drillButton.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -16),
             drillButton.centerXAnchor.constraint(equalTo: centerXAnchor, constant: -150),
@@ -144,7 +171,16 @@ final class TrainingView: UIView {
             stats.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, multiplier: 0.9),
             hint.bottomAnchor.constraint(equalTo: stats.topAnchor, constant: -6),
             hint.centerXAnchor.constraint(equalTo: centerXAnchor),
+            hint.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, multiplier: 0.9),
         ])
+        cursorLayer.path = UIBezierPath(ovalIn: CGRect(x: -6, y: -6, width: 12, height: 12)).cgPath
+        cursorLayer.fillColor = UIColor.clear.cgColor
+        cursorLayer.strokeColor = UIColor.white.cgColor
+        cursorLayer.lineWidth = 1.5
+        cursorLayer.opacity = 0
+        still(cursorLayer)
+        layer.addSublayer(cursorLayer)
+        refreshHint()
         refreshStats()
     }
 
@@ -166,6 +202,7 @@ final class TrainingView: UIView {
         drillIndex = (drillIndex + 1) % Drill.library.count
         drillButton.setTitle(drill.name, for: .normal)
         resetStats()
+        refreshHint()
     }
 
     @objc private func slower() { tempo = min(2.0, tempo + 0.1); refreshStats() }
@@ -177,12 +214,15 @@ final class TrainingView: UIView {
         resetStats()
         clearPrompts()
         running = true
-        startTime = CACurrentMediaTime() + 1.0
+        let now = CACurrentMediaTime()
+        startTime = now + 1.0
         nextCycle = 0
         enemy = CGPoint(x: area.midX, y: area.midY)
+        if drill.kind == .chase { chaseStart(now: now) }
         startButton.setTitle("Stop", for: .normal)
         displayLink = CADisplayLink(target: self, selector: #selector(tick))
         displayLink?.add(to: .main, forMode: .common)
+        if let c = cursor { cursor = c }
     }
 
     func stop() {
@@ -190,8 +230,20 @@ final class TrainingView: UIView {
         displayLink?.invalidate()
         displayLink = nil
         clearPrompts()
+        chaseTeardown()
+        cursorLayer.opacity = 0
         startButton.setTitle("Start", for: .normal)
         refreshStats()
+    }
+
+    private func refreshHint() {
+        switch drill.kind {
+        case .chase:
+            hint.text = "Blue is you, red runs at you. 1-finger tap / Pencil tip = move · 2 fingers, firm press or Pencil double-tap = attack-move · 3 fingers / squeeze = Flash\n" +
+                        "Land 4 shots before it reaches you. Attack-move when the ring is white, move away while the orange ring refills. Moving during the wind-up cancels the shot."
+        case .rhythm:
+            hint.text = "ATK = firm press, 2 fingers or Pencil barrel double-tap · MOVE = 1-finger tap or Pencil tip · SUMM = 3 · ITEM = 4"
+        }
     }
 
     // MARK: Input
@@ -206,6 +258,10 @@ final class TrainingView: UIView {
         case .tap(let n, let p): fingers = n; point = p
         case .press(let p): fingers = 2; point = p          // a firm press counts as an attack
         case .pencilTap(let p): fingers = 1; point = p
+        }
+        if drill.kind == .chase {
+            chaseCommand(fingers: fingers, at: point, now: now)
+            return
         }
         // Nearest unjudged prompt in time that accepts this gesture.
         let candidates = prompts.filter { !$0.judged && abs(now - $0.time) <= goodWindow && accepts($0.expect, fingers) }
@@ -246,10 +302,14 @@ final class TrainingView: UIView {
         }
     }
 
-    // MARK: Scheduling and drawing
+    // MARK: Scheduling and drawing (rhythm)
 
     @objc private func tick() {
         let now = CACurrentMediaTime()
+        if drill.kind == .chase {
+            chaseTick(now: now)
+            return
+        }
         // Generate prompts up to one lead time ahead.
         while startTime + Double(nextCycle) * period < now + leadTime + period {
             spawnCycle(nextCycle)
@@ -372,7 +432,7 @@ final class TrainingView: UIView {
         prompt.text.opacity = 0
 
         for l in [prompt.ring, prompt.circle, prompt.text] {
-            l.actions = ["opacity": NSNull(), "transform": NSNull(), "position": NSNull()]
+            still(l)
             layer.addSublayer(l)
         }
     }
@@ -392,6 +452,417 @@ final class TrainingView: UIView {
         prompts.removeAll()
     }
 
+    /// Core Animation would otherwise animate every property change over 0.25 s; we drive frames ourselves.
+    private func still(_ l: CALayer) {
+        l.actions = ["opacity": NSNull(), "transform": NSNull(), "position": NSNull(), "path": NSNull(),
+                     "strokeEnd": NSNull(), "strokeColor": NSNull(), "fillColor": NSNull(),
+                     "bounds": NSNull(), "backgroundColor": NSNull(), "lineWidth": NSNull()]
+    }
+
+    // MARK: - Chase simulation
+
+    private struct ChaseState {
+        var champion = CGPoint.zero
+        var enemy = CGPoint.zero
+        var championHP: CGFloat = 1
+        var enemyHP: CGFloat = 1
+        var moveTarget: CGPoint?
+        var attackMoving = false            // walking under an attack-move: auto-attacks once in range
+        var windupEnd: Double?
+        var attackReadyAt: Double = 0
+        var inRangeSince: Double?
+        var cooldownActive = false
+        var cooldownMoved = false           // a move command was issued during this cooldown (= kiting)
+        var flashReadyAt: Double = 0
+        var jukeAngle: CGFloat = 0
+        var nextJuke: Double = 0
+        var lastTick: Double = 0
+        var bullet: (from: CGPoint, launchedAt: Double)?
+        var targetShownAt: Double = -1
+        // Stats
+        var roundShots = 0, bestRoundShots = 0, lastRoundShots = 0, rounds = 0, totalRoundShots = 0
+        var kills = 0, caught = 0, attacks = 0, cancels = 0
+        var cooldowns = 0, kitedCooldowns = 0
+        var readyDelaySum: Double = 0, readyDelays = 0
+    }
+
+    private var chase = ChaseState()
+    private let championLayer = CAShapeLayer()
+    private let enemyLayer = CAShapeLayer()
+    private let rangeLayer = CAShapeLayer()
+    private let cooldownLayer = CAShapeLayer()
+    private let targetLayer = CAShapeLayer()
+    private let bulletLayer = CAShapeLayer()
+    private let championHPBack = CALayer(), championHPFill = CALayer()
+    private let enemyHPBack = CALayer(), enemyHPFill = CALayer()
+    private var captions: [(layer: CATextLayer, at: Double)] = []
+    private var chaseInstalled = false
+
+    private var unit: CGFloat { min(area.width, area.height) }
+    private var dotRadius: CGFloat { max(9, unit * 0.035) }
+    private var attackRange: CGFloat { unit * chaseAttackRangeRatio }
+    private var reach: CGFloat { dotRadius * 2 + unit * 0.02 }          // enemy melee reach
+
+    private func chaseStart(now: Double) {
+        chase = ChaseState()
+        chase.lastTick = now
+        chaseInstall()
+        chaseResetRound(now: now)
+    }
+
+    private func chaseInstall() {
+        let r = dotRadius
+        let dot = UIBezierPath(ovalIn: CGRect(x: -r, y: -r, width: 2 * r, height: 2 * r)).cgPath
+        championLayer.path = dot
+        championLayer.fillColor = UIColor.systemBlue.cgColor
+        championLayer.strokeColor = UIColor.white.cgColor
+        championLayer.lineWidth = 1.5
+        enemyLayer.path = dot
+        enemyLayer.fillColor = UIColor.systemRed.cgColor
+        enemyLayer.strokeColor = UIColor.white.cgColor
+        enemyLayer.lineWidth = 1.5
+
+        let range = attackRange
+        rangeLayer.path = UIBezierPath(ovalIn: CGRect(x: -range, y: -range, width: 2 * range, height: 2 * range)).cgPath
+        rangeLayer.fillColor = UIColor.clear.cgColor
+        rangeLayer.lineWidth = 1.5
+        rangeLayer.lineDashPattern = [6, 6]
+
+        let arcR = r + 7
+        cooldownLayer.path = UIBezierPath(arcCenter: .zero, radius: arcR, startAngle: -.pi / 2,
+                                          endAngle: 1.5 * .pi, clockwise: true).cgPath
+        cooldownLayer.fillColor = UIColor.clear.cgColor
+        cooldownLayer.lineWidth = 4
+        cooldownLayer.lineCap = .round
+        cooldownLayer.strokeEnd = 0
+
+        targetLayer.path = UIBezierPath(ovalIn: CGRect(x: -8, y: -8, width: 16, height: 16)).cgPath
+        targetLayer.fillColor = UIColor.clear.cgColor
+        targetLayer.lineWidth = 2
+        targetLayer.opacity = 0
+
+        bulletLayer.path = UIBezierPath(ovalIn: CGRect(x: -4, y: -4, width: 8, height: 8)).cgPath
+        bulletLayer.fillColor = UIColor.white.cgColor
+        bulletLayer.strokeColor = UIColor.systemYellow.cgColor
+        bulletLayer.lineWidth = 1.5
+        bulletLayer.opacity = 0
+
+        for (back, fill) in [(championHPBack, championHPFill), (enemyHPBack, enemyHPFill)] {
+            back.bounds = CGRect(x: 0, y: 0, width: 40, height: 5)
+            back.backgroundColor = UIColor(white: 0.25, alpha: 1).cgColor
+            back.cornerRadius = 2.5
+            fill.bounds = CGRect(x: 0, y: 0, width: 40, height: 5)
+            fill.anchorPoint = CGPoint(x: 0, y: 0.5)
+            fill.position = CGPoint(x: 0, y: 2.5)
+            fill.cornerRadius = 2.5
+            back.addSublayer(fill)
+        }
+        championHPFill.backgroundColor = UIColor.systemGreen.cgColor
+        enemyHPFill.backgroundColor = UIColor.systemRed.cgColor
+
+        if !chaseInstalled {
+            for l in [rangeLayer, targetLayer, bulletLayer, cooldownLayer, enemyLayer, championLayer,
+                      championHPBack, championHPFill, enemyHPBack, enemyHPFill] {
+                still(l)
+            }
+            for l in [rangeLayer, targetLayer, bulletLayer, cooldownLayer, enemyLayer, championLayer,
+                      championHPBack, enemyHPBack] {
+                layer.insertSublayer(l, below: cursorLayer)
+            }
+            chaseInstalled = true
+        }
+        for l in [rangeLayer, cooldownLayer, enemyLayer, championLayer, championHPBack, enemyHPBack] {
+            l.isHidden = false
+        }
+    }
+
+    private func chaseTeardown() {
+        guard chaseInstalled else { return }
+        for l in [rangeLayer, targetLayer, bulletLayer, cooldownLayer, enemyLayer, championLayer,
+                  championHPBack, enemyHPBack] {
+            l.isHidden = true
+        }
+        targetLayer.opacity = 0
+        bulletLayer.opacity = 0
+        for c in captions { c.layer.removeFromSuperlayer() }
+        captions.removeAll()
+    }
+
+    private func chaseResetRound(now: Double) {
+        let area = self.area
+        chase.champion = CGPoint(x: area.midX, y: area.midY)
+        chase.championHP = 1
+        chase.moveTarget = nil
+        chase.attackMoving = false
+        chase.windupEnd = nil
+        chase.attackReadyAt = now
+        chase.cooldownActive = false
+        chase.inRangeSince = nil
+        chase.bullet = nil
+        chase.roundShots = 0
+        chaseSpawnEnemy()
+    }
+
+    private func chaseEndRound() {
+        chase.rounds += 1
+        chase.lastRoundShots = chase.roundShots
+        chase.totalRoundShots += chase.roundShots
+        chase.bestRoundShots = max(chase.bestRoundShots, chase.roundShots)
+    }
+
+    /// The enemy appears on the edge of the pad, as far from you as a few random picks allow.
+    private func chaseSpawnEnemy() {
+        let area = self.area
+        var best = CGPoint(x: area.minX, y: area.minY)
+        var bestDistance: CGFloat = -1
+        for _ in 0 ..< 6 {
+            let t = CGFloat.random(in: 0 ..< 1)
+            let p: CGPoint
+            switch Int.random(in: 0 ..< 4) {
+            case 0: p = CGPoint(x: area.minX + t * area.width, y: area.minY)
+            case 1: p = CGPoint(x: area.minX + t * area.width, y: area.maxY)
+            case 2: p = CGPoint(x: area.minX, y: area.minY + t * area.height)
+            default: p = CGPoint(x: area.maxX, y: area.minY + t * area.height)
+            }
+            let d = hypot(p.x - chase.champion.x, p.y - chase.champion.y)
+            if d > bestDistance { best = p; bestDistance = d }
+        }
+        chase.enemy = best
+        chase.enemyHP = 1
+        chase.inRangeSince = nil
+    }
+
+    private func chaseCommand(fingers: Int, at p: CGPoint, now: Double) {
+        switch fingers {
+        case 1:                                                     // move
+            if chase.windupEnd != nil {
+                chase.windupEnd = nil
+                chase.cancels += 1
+                caption("CANCEL", color: .systemOrange, at: chase.champion, now: now)
+            }
+            chase.moveTarget = p
+            chase.attackMoving = false
+            if chase.cooldownActive { chase.cooldownMoved = true }
+            showTarget(p, color: .systemGreen, now: now)
+        case 2:                                                     // attack-move
+            guard chase.windupEnd == nil else { return }            // already swinging
+            chase.attackMoving = true
+            chase.moveTarget = p
+            showTarget(p, color: .systemRed, now: now)
+        case 3:                                                     // Flash toward the tap
+            guard now >= chase.flashReadyAt else {
+                caption("FLASH \(Int(ceil(chase.flashReadyAt - now)))s", color: .systemYellow, at: chase.champion, now: now)
+                return
+            }
+            let dx = p.x - chase.champion.x, dy = p.y - chase.champion.y
+            let d = max(hypot(dx, dy), 0.001)
+            let step = min(d, unit * chaseFlashRangeRatio)
+            chase.champion.x += dx / d * step
+            chase.champion.y += dy / d * step
+            clamp(&chase.champion)
+            chase.windupEnd = nil
+            chase.flashReadyAt = now + chaseFlashCooldown
+            caption("FLASH", color: .systemYellow, at: chase.champion, now: now)
+            AudioServicesPlaySystemSound(1057)
+        default:
+            break
+        }
+        refreshStats()
+    }
+
+    private func chaseTick(now: Double) {
+        let dt = min(0.05, max(0, now - chase.lastTick))
+        chase.lastTick = now
+        let speedScale = CGFloat(1 / tempo)
+        let cooldown = period
+        let windup = chaseWindup * tempo
+
+        // Enemy: runs at you with a slight weave so you keep re-aiming, stops at reach.
+        var dx = chase.champion.x - chase.enemy.x, dy = chase.champion.y - chase.enemy.y
+        var distance = hypot(dx, dy)
+        if now >= chase.nextJuke {
+            chase.jukeAngle = CGFloat.random(in: -0.6 ... 0.6)
+            chase.nextJuke = now + Double.random(in: 0.5 ... 1.0)
+        }
+        if distance > reach * 0.9 {
+            var angle = atan2(dy, dx)
+            if distance > reach * 2.5 { angle += chase.jukeAngle }
+            let step = min(unit * chaseEnemySpeedRatio * speedScale * CGFloat(dt), distance - reach * 0.9)
+            chase.enemy.x += cos(angle) * step
+            chase.enemy.y += sin(angle) * step
+            clamp(&chase.enemy)
+        }
+
+        // Champion: wind-up, attack-move, or plain move.
+        dx = chase.enemy.x - chase.champion.x; dy = chase.enemy.y - chase.champion.y
+        distance = hypot(dx, dy)
+        let inRange = distance <= attackRange
+        if inRange {
+            if chase.inRangeSince == nil { chase.inRangeSince = now }
+        } else {
+            chase.inRangeSince = nil
+        }
+        let ready = now >= chase.attackReadyAt
+        if chase.cooldownActive && ready {
+            chase.cooldownActive = false
+            chase.cooldowns += 1
+            if chase.cooldownMoved { chase.kitedCooldowns += 1 }
+            refreshStats()
+        }
+
+        if let end = chase.windupEnd {
+            if now >= end { chaseFire(now: now, cooldown: cooldown) }      // stands still only for the wind-up
+        } else if chase.attackMoving, inRange, ready {
+            chaseBeginWindup(now: now, windup: windup)
+        } else if let t = chase.moveTarget {
+            if walk(toward: t, speedScale: speedScale, dt: dt) { chase.moveTarget = nil }
+        }
+
+        // Bullet in flight: homes on the enemy, damage lands on arrival.
+        if let b = chase.bullet, now - b.launchedAt >= chaseBulletTime {
+            chase.bullet = nil
+            chaseBulletLands(now: now)
+        }
+
+        // Round lost once the enemy reaches you.
+        if distance <= reach {
+            chase.championHP -= CGFloat(dt / chaseSecondsToDie)
+            if chase.championHP <= 0 {
+                chase.caught += 1
+                chaseEndRound()
+                caption("CAUGHT · \(chase.roundShots) shots", color: .systemRed, at: chase.champion, now: now)
+                AudioServicesPlaySystemSound(1053)
+                chaseResetRound(now: now)
+                refreshStats()
+            }
+        }
+
+        chaseDraw(now: now, inRange: inRange, ready: ready, cooldown: cooldown, windup: windup)
+    }
+
+    private func chaseBeginWindup(now: Double, windup: Double) {
+        chase.windupEnd = now + windup
+        // How long the attack sat available (ready AND in range) before you used it.
+        let possibleSince = max(chase.attackReadyAt, chase.inRangeSince ?? now)
+        chase.readyDelaySum += max(0, now - possibleSince)
+        chase.readyDelays += 1
+    }
+
+    private func chaseFire(now: Double, cooldown: Double) {
+        chase.windupEnd = nil
+        chase.attacks += 1
+        chase.roundShots += 1
+        chase.attackReadyAt = now + cooldown
+        chase.cooldownActive = true
+        chase.cooldownMoved = false
+        chase.bullet = (chase.champion, now)
+        AudioServicesPlaySystemSound(1104)
+        refreshStats()
+    }
+
+    private func chaseBulletLands(now: Double) {
+        chase.enemyHP -= 1 / CGFloat(chaseEnemyHits)
+        if chase.enemyHP <= 0 {
+            chase.kills += 1
+            chaseEndRound()
+            caption("KILL · \(chase.roundShots) shots", color: .systemGreen, at: chase.enemy, now: now)
+            chaseResetRound(now: now)
+        }
+        refreshStats()
+    }
+
+    /// Moves the champion toward a point; returns true on arrival.
+    @discardableResult
+    private func walk(toward t: CGPoint, speedScale: CGFloat, dt: Double) -> Bool {
+        let dx = t.x - chase.champion.x, dy = t.y - chase.champion.y
+        let d = hypot(dx, dy)
+        let step = unit * chaseChampionSpeedRatio * speedScale * CGFloat(dt)
+        if d <= step {
+            chase.champion = t
+            clamp(&chase.champion)
+            return true
+        }
+        chase.champion.x += dx / d * step
+        chase.champion.y += dy / d * step
+        clamp(&chase.champion)
+        return false
+    }
+
+    private func clamp(_ p: inout CGPoint) {
+        let area = self.area
+        p.x = min(max(p.x, area.minX), area.maxX)
+        p.y = min(max(p.y, area.minY), area.maxY)
+    }
+
+    private func chaseDraw(now: Double, inRange: Bool, ready: Bool, cooldown: Double, windup: Double) {
+        championLayer.position = chase.champion
+        enemyLayer.position = chase.enemy
+        rangeLayer.position = chase.champion
+        cooldownLayer.position = chase.champion
+        let r = dotRadius
+        championHPBack.position = CGPoint(x: chase.champion.x, y: chase.champion.y - r - 10)
+        enemyHPBack.position = CGPoint(x: chase.enemy.x, y: chase.enemy.y - r - 10)
+        championHPFill.transform = CATransform3DMakeScale(max(0, chase.championHP), 1, 1)
+        enemyHPFill.transform = CATransform3DMakeScale(max(0, chase.enemyHP), 1, 1)
+
+        // Range ring: grey out of range, yellow in range but cooling, white when you can attack now.
+        let rangeColor: UIColor = !inRange ? UIColor(white: 0.45, alpha: 1)
+            : (ready && chase.windupEnd == nil ? .white : .systemYellow)
+        rangeLayer.strokeColor = rangeColor.cgColor
+        rangeLayer.lineWidth = inRange && ready && chase.windupEnd == nil ? 2.5 : 1.5
+
+        if let end = chase.windupEnd {
+            cooldownLayer.strokeColor = UIColor.systemRed.cgColor
+            cooldownLayer.strokeEnd = CGFloat(1 - max(0, (end - now) / windup))
+        } else if !ready {
+            cooldownLayer.strokeColor = UIColor.systemOrange.cgColor
+            cooldownLayer.strokeEnd = CGFloat(1 - max(0, (chase.attackReadyAt - now) / cooldown))
+        } else {
+            cooldownLayer.strokeColor = UIColor.white.withAlphaComponent(0.35).cgColor
+            cooldownLayer.strokeEnd = 1
+        }
+
+        if chase.targetShownAt >= 0 {
+            targetLayer.opacity = Float(max(0, 1 - (now - chase.targetShownAt) / 0.6))
+        }
+        if let b = chase.bullet {
+            let t = CGFloat(min(1, (now - b.launchedAt) / chaseBulletTime))
+            bulletLayer.position = CGPoint(x: b.from.x + (chase.enemy.x - b.from.x) * t,
+                                           y: b.from.y + (chase.enemy.y - b.from.y) * t)
+            bulletLayer.opacity = 1
+        } else {
+            bulletLayer.opacity = 0
+        }
+        captions.removeAll { c in
+            let age = now - c.at
+            if age > 0.8 { c.layer.removeFromSuperlayer(); return true }
+            c.layer.opacity = Float(max(0, 1 - age / 0.8))
+            c.layer.transform = CATransform3DMakeTranslation(0, CGFloat(-24 * age), 0)
+            return false
+        }
+    }
+
+    private func showTarget(_ p: CGPoint, color: UIColor, now: Double) {
+        targetLayer.position = p
+        targetLayer.strokeColor = color.cgColor
+        chase.targetShownAt = now
+        targetLayer.opacity = 1
+    }
+
+    private func caption(_ text: String, color: UIColor, at p: CGPoint, now: Double) {
+        let t = CATextLayer()
+        t.string = text
+        t.font = UIFont.monospacedSystemFont(ofSize: 15, weight: .bold)
+        t.fontSize = 15
+        t.foregroundColor = color.cgColor
+        t.alignmentMode = .center
+        t.contentsScale = UIScreen.main.scale
+        t.frame = CGRect(x: p.x - 60, y: p.y - dotRadius - 34, width: 120, height: 20)
+        still(t)
+        layer.addSublayer(t)
+        captions.append((t, now))
+    }
+
     // MARK: Stats
 
     private func resetStats() {
@@ -402,6 +873,15 @@ final class TrainingView: UIView {
     }
 
     private func refreshStats() {
+        if drill.kind == .chase {
+            let kited = chase.cooldowns == 0 ? 0 : chase.kitedCooldowns * 100 / chase.cooldowns
+            let delay = chase.readyDelays == 0 ? 0 : Int(chase.readyDelaySum / Double(chase.readyDelays) * 1000)
+            let avg = chase.rounds == 0 ? 0 : Double(chase.totalRoundShots) / Double(chase.rounds)
+            stats.text = String(format: "%@ · attack every %.2fs · this round %d shots · last %d · best %d · avg %.1f · goal 4\nkills %d · caught %d · cancelled %d · kited during %d%% of cooldowns · ready → attack %d ms",
+                                drill.name, period, chase.roundShots, chase.lastRoundShots, chase.bestRoundShots, avg,
+                                chase.kills, chase.caught, chase.cancels, kited, delay)
+            return
+        }
         let total = hits + misses
         let accuracy = total == 0 ? 0 : Int(Double(hits) / Double(total) * 100)
         let meanOffset = hits == 0 ? 0 : Int(offsetSum / Double(hits) * 1000)

@@ -451,7 +451,7 @@ final class TouchpadViewController: UIViewController {
         guard g.state == .began || g.state == .changed else { return }
         lastPencilPoint = g.location(in: view)
         rateHover += 1
-        guard mode != .training else { return }
+        guard mode != .training else { trainer.cursor = lastPencilPoint; return }
         let now = CACurrentMediaTime()
         guard now - lastHoverSent >= hoverInterval else { return }
         lastHoverSent = now
@@ -747,7 +747,7 @@ final class TouchpadViewController: UIViewController {
             hint = "Finger: drag = move pointer · tap = move cmd · firm press = attack/select · 2-tap = attack · 3-tap = summoner (M4) · 4-tap = item (M5)\n" +
                    "Pencil: hover aims · tip tap = move · tip double-tap = attack-move · squeeze = M4"
         case .training:
-            hint = "Training: nothing is sent to the Mac. Pick a drill below, press Start, hit the prompts on the beat."
+            hint = "Training: nothing is sent to the Mac. Chase = kite a live enemy; the others are beat drills. Pick one below and press Start."
         }
         hud.text = (mode == .training ? "" : status + "\n") + hint + (rateText.isEmpty ? "" : "\n" + rateText)
     }
