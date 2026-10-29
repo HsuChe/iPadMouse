@@ -99,8 +99,48 @@ final class Receiver {
         return handle
     }()
 
+    private var lastDownAt: [UInt8: TimeInterval] = [:]
+    /// Finger (relative) moves: a gap of 40 ms to 1 s between two moves is a pause in the middle of a glide.
+    private var lastRelativeMove: TimeInterval = 0
+    private var lastRelativeSent: Float = 0
+    private var lastStroke: UInt8 = 0
+    private var relativeCount = 0
+    private var relativeWindow: TimeInterval = 0
+    /// A gap of 40 ms or more inside one stroke (finger still on the glass) is a pause. The iPad's send
+    /// times show whose fault it is: if the iPad also sent nothing for that long, the finger was still or
+    /// the iPad stalled (a large touch age means the iPad stalled); if the iPad sent on time, the link held
+    /// the packets.
+    private func recordRelativeMove(stroke: UInt8, sentAt: Float, touchAgeMs: Float) {
+        let now = ProcessInfo.processInfo.systemUptime
+        let gap = now - lastRelativeMove
+        if lastRelativeMove > 0, stroke == lastStroke, gap > 0.04, gap < 2 {
+            let sentGap = Double(sentAt - lastRelativeSent)
+            let cause: String
+            if sentGap < gap * 0.5 { cause = "LINK delayed it" }
+            else if touchAgeMs > 30 { cause = "iPad STALLED" }
+            else { cause = "iPad sent nothing (finger still?)" }
+            log(String(format: "finger move PAUSE %.0f ms in stroke %d: iPad send gap %.0f ms, touch age %.0f ms → %@",
+                       gap * 1000, stroke, sentGap * 1000, touchAgeMs, cause))
+        }
+        if stroke != lastStroke || gap >= 2 { relativeCount = 0; relativeWindow = now }
+        lastRelativeMove = now
+        lastRelativeSent = sentAt
+        lastStroke = stroke
+        relativeCount += 1
+        if now - relativeWindow >= 2 {
+            log(String(format: "finger moves: %.0f/s", Double(relativeCount) / (now - relativeWindow)))
+            relativeCount = 0
+            relativeWindow = now
+        }
+    }
+    private let stampFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
     private func log(_ text: String) {
-        let stamp = ISO8601DateFormatter().string(from: Date())
+        let stamp = stampFormatter.string(from: Date())
         logHandle?.write("\(stamp) \(text)\n".data(using: .utf8) ?? Data())
     }
 
@@ -263,14 +303,24 @@ final class Receiver {
             recordMove(sentStamp: p.dx)
             injector.moveAbsolute(nx: p.x, ny: p.y)
         case .moveRelative:
+            recordRelativeMove(stroke: p.button, sentAt: p.x, touchAgeMs: p.y)
             injector.moveRelative(dx: CGFloat(p.dx), dy: CGFloat(p.dy))
         case .buttonDown:
-            log("buttonDown \(p.button) (\(MouseButton(rawValue: p.button).map { "\($0)" } ?? "?"))")
+            // Which input sent it, and how soon after the previous press of the same button: two presses
+            // closer than the double-click interval are what macOS turns into a double-click.
+            let now = ProcessInfo.processInfo.systemUptime
+            let gap = lastDownAt[p.button].map { String(format: ", %.0f ms after the previous", (now - $0) * 1000) } ?? ""
+            lastDownAt[p.button] = now
+            let source = ClickSource(rawValue: p.flags)?.label ?? "source \(p.flags)"
+            log("buttonDown \(p.button) (\(MouseButton(rawValue: p.button).map { "\($0)" } ?? "?")) from \(source)\(gap)")
             injector.button(p.button, down: true)
         case .buttonUp:
             log("buttonUp \(p.button)")
             injector.button(p.button, down: false)
         case .scroll:
+            if p.flags == ScrollPhase.began.rawValue, p.button != 0 {
+                log("circle scroll started (\(p.button == 1 ? "finger" : "Pencil")): pointer frozen")
+            }
             if let phase = ScrollPhase(rawValue: p.flags) {
                 injector.scroll(dx: p.dx, dy: p.dy, phase: phase)
             }

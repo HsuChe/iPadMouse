@@ -33,14 +33,18 @@ Two modes, switched with the **Mode** button on the iPad and remembered between 
 |---|---|
 | Pencil hovering (M2 iPad Pro or newer) | Pointer follows, hover effects work |
 | Pencil touch | Left click; keep it down to drag |
-| Pencil double-tap (barrel) | Right click |
+| Pencil double-tap (barrel) | Right click. Turn it off in Settings > Apple Pencil > Double-tap if a firm grip sets it off |
 | Pencil Pro squeeze | Back (mouse button 4) |
 | Quick hard stab with the Pencil | Back (mouse button 4) |
-| One finger tap | Left click at the pointer |
-| One finger drag | Move the pointer like a trackpad |
+| One finger tap | Left click at the pointer. Only counts if no other finger touched during the tap |
+| One finger drag | Move the pointer like a trackpad, with Mac-style acceleration (slow = precise, fast = far). **Tracking** 1-10 and **Acceleration** on/off are buttons on the pad |
 | Two finger drag | Scroll with momentum |
-| Two finger tap | Right click |
+| Two finger tap | Right click. Only counts if exactly two fingers touched and they landed within 80 ms of each other, so a resting thumb or the fingers of a swipe never right-click |
+| The Pencil, while hovering, going round in compact circles (within about 1 s, no wider than about 4 cm) | Scroll wheel: clockwise scrolls up, counterclockwise scrolls down (sent as finger travel, so it follows the Mac's natural-scrolling setting). The pointer holds still while the wheel turns; stop circling to get it back. The one-finger version is off: ordinary glides kept triggering it |
 | Three finger swipe left/right/up/down | Next/previous Space, Mission Control, App Exposé |
+| Three finger tap | Look up (Ctrl-Cmd-D) |
+| Four fingers spread apart / pinch together | Show Desktop / Launchpad (the Apps view on macOS 26) |
+| Pencil Pro squeeze while hovering, then move the Pencil left/right before letting go | Next/previous Space (the pointer holds still during the squeeze, and Back is not sent) |
 | Pinch | Cmd + / Cmd - |
 
 ### League mode
@@ -106,8 +110,11 @@ and game-aware drills fed by League's local Live Client Data API.
 
 | Input | Result |
 |---|---|
+| Palm or side of the hand on the glass | Ignored: it never clicks, scrolls or counts as a finger. Contacts of 40 pt or more are palms; the HUD shows the largest contact of the last touch |
+| Pencil hovering or touching | The Pencil owns the pad: every finger and palm touch is ignored, and fingers already down are dropped until they lift. Fingers get the pad back 0.3 s after the Pencil leaves. The HUD's `input:` line shows who has it |
 | "Dim screen" button | Backlight to zero; the restore button stays in the top right |
-| "Prefer USB" button | Refuses Wi-Fi so only a wired link is used |
+| "Prefer USB" button | Uses the direct USB link whenever the cable is attached (Wi-Fi otherwise). On by default and remembered, because Wi-Fi delivery jitters by 100-150 ms and makes the pointer stutter |
+| "Lock iPad" button | Hides every iPad-side control so touches only drive the Mac. Hold "Unlock" for 1 second to get them back. To also block iPadOS swipes (Home, Control Center, app switcher, notifications), triple-click the top button to start Guided Access; turn it on once in Settings > Accessibility > Guided Access. Starting Guided Access also locks the app |
 
 ### Connecting and pairing
 

@@ -25,6 +25,27 @@ enum MouseButton: UInt8 {
     case left = 0, right = 1, middle = 2, back = 3, forward = 4
 }
 
+/// Carried in `flags` of buttonDown packets so the Mac log can say which input produced each click.
+enum ClickSource: UInt8 {
+    case unknown = 0, fingerTap, twoFingerTap, pencilTip, pencilBarrel, pencilSqueeze, pencilStab,
+         tapDrag, leaguePress, leagueTap
+
+    var label: String {
+        switch self {
+        case .unknown: return "unknown"
+        case .fingerTap: return "1-finger tap"
+        case .twoFingerTap: return "2-finger tap"
+        case .pencilTip: return "Pencil tip"
+        case .pencilBarrel: return "Pencil barrel double-tap"
+        case .pencilSqueeze: return "Pencil squeeze"
+        case .pencilStab: return "Pencil hard stab"
+        case .tapDrag: return "tap and drag"
+        case .leaguePress: return "League firm press"
+        case .leagueTap: return "League tap"
+        }
+    }
+}
+
 enum ScrollPhase: UInt8 {
     case began = 1, changed, ended, momentumBegan, momentumChanged, momentumEnded
 }
@@ -41,6 +62,9 @@ struct KeyModifiers: OptionSet {
 enum KeyCode {
     static let equals: UInt8 = 24
     static let minus: UInt8 = 27
+    static let d: UInt8 = 2
+    static let f4: UInt8 = 118
+    static let f11: UInt8 = 103
     static let leftArrow: UInt8 = 123
     static let rightArrow: UInt8 = 124
     static let downArrow: UInt8 = 125

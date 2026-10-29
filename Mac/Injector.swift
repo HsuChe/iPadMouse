@@ -25,6 +25,7 @@ final class Injector {
     /// Safety: release every held button (link dropped mid-press, app quitting).
     func releaseAll() {
         for b in buttonsDown { post(button: b, down: false) }
+        clearModifiers()
     }
 
     private func currentLocation() -> CGPoint {
@@ -138,15 +139,63 @@ final class Injector {
     // MARK: Keys
 
     func key(code: UInt16, modifiers: KeyModifiers) {
+        // A plain F4 key code does nothing; the Launchpad key on Apple keyboards is a system-defined
+        // media key (NX_KEYTYPE_LAUNCHPAD), so post that instead. On macOS 26 it opens the Apps view.
+        if code == UInt16(KeyCode.f4), modifiers.isEmpty {
+            postSystemKey(28)
+            return
+        }
+        // Press each modifier as a real key, the way a keyboard does, then release it again. Putting the
+        // modifier only in the arrow key's flags left macOS believing Control was still held, so every
+        // later click became a Control-click and opened a context menu.
+        let modifierKeys: [(KeyModifiers, CGKeyCode, CGEventFlags)] = [
+            (.command, 55, .maskCommand), (.shift, 56, .maskShift),
+            (.control, 59, .maskControl), (.option, 58, .maskAlternate),
+        ]
         var flags = CGEventFlags()
-        if modifiers.contains(.command) { flags.insert(.maskCommand) }
-        if modifiers.contains(.shift)   { flags.insert(.maskShift) }
-        if modifiers.contains(.control) { flags.insert(.maskControl) }
-        if modifiers.contains(.option)  { flags.insert(.maskAlternate) }
+        for (modifier, keyCode, flag) in modifierKeys where modifiers.contains(modifier) {
+            flags.insert(flag)
+            postModifier(keyCode, flags: flags)
+        }
+        var keyFlags = flags
+        // Real arrow keys carry the fn and numeric-pad flags. Without them, macOS ignores a synthetic
+        // Ctrl-arrow for its Space and Mission Control shortcuts.
+        if (123...126).contains(code) { keyFlags.formUnion([.maskSecondaryFn, .maskNumericPad]) }
         for down in [true, false] {
-            guard let e = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down) else { continue }
-            e.flags = flags
+            guard let e = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(code), keyDown: down) else { continue }
+            e.flags = keyFlags
             e.post(tap: .cghidEventTap)
+        }
+        for (modifier, keyCode, flag) in modifierKeys.reversed() where modifiers.contains(modifier) {
+            flags.remove(flag)
+            postModifier(keyCode, flags: flags)
+        }
+        // Finish on a clean slate: this also drops the arrow key's fn and numeric-pad flags.
+        if !keyFlags.isEmpty { clearModifiers() }
+    }
+
+    /// A modifier key going down or up is a flagsChanged event whose flags are the new state.
+    private func postModifier(_ keyCode: CGKeyCode, flags: CGEventFlags) {
+        guard let e = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true) else { return }
+        e.type = .flagsChanged
+        e.flags = flags
+        e.post(tap: .cghidEventTap)
+    }
+
+    /// Tells macOS no modifier is held. Safe to call any time.
+    func clearModifiers() {
+        postModifier(63, flags: [])                 // fn key, released, with every flag cleared
+    }
+
+    /// Media and special keys (NX_KEYTYPE_*) travel as system-defined events, not keyboard events.
+    private func postSystemKey(_ keyType: Int) {
+        for down in [true, false] {
+            let state = down ? 0xa : 0xb
+            guard let e = NSEvent.otherEvent(with: .systemDefined, location: .zero,
+                                             modifierFlags: NSEvent.ModifierFlags(rawValue: UInt(state << 8)),
+                                             timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: 0, context: nil,
+                                             subtype: 8, data1: (keyType << 16) | (state << 8), data2: -1) else { continue }
+            e.cgEvent?.post(tap: .cghidEventTap)
         }
     }
 }
