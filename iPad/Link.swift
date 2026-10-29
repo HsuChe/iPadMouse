@@ -25,9 +25,11 @@ final class Link {
     private var preferredMac: String? = UserDefaults.standard.string(forKey: "preferredMac")
     private var results = Set<NWBrowser.Result>()
 
-    /// When on, Wi-Fi and cellular are prohibited so only a wired (USB) link can be used.
-    var preferWired = false {
+    /// When on, the direct USB link is used whenever the cable is attached; without it, Wi-Fi carries on.
+    /// Saved, and on by default: Wi-Fi delivery jitters by 100-150 ms, USB by about 5 ms.
+    var preferWired = UserDefaults.standard.object(forKey: "preferWired") as? Bool ?? true {
         didSet {
+            UserDefaults.standard.set(preferWired, forKey: "preferWired")
             queue.async {
                 if self.preferWired {
                     self.triedDirectHosts.removeAll()       // next peerAddress packet will trigger an attempt

@@ -28,6 +28,15 @@ final class TouchpadView: UIScrollView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    /// Touches this returns true for (palms) never reach the two-finger scroll.
+    var rejectsTouch: ((UITouch) -> Bool)?
+
+    // UIScrollView is its own pan recognizer's delegate; this keeps palms out of scrolling.
+    @objc func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        if g === panGestureRecognizer, touch.type == .direct, rejectsTouch?(touch) == true { return false }
+        return true
+    }
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         forward(touches, .began)
         super.touchesBegan(touches, with: event)
