@@ -5,8 +5,8 @@
 //
 // Two modes, switchable from the HUD and remembered between launches:
 //
-// Desktop: Pencil hover moves, touch = left click (hold to drag), double-tap = right
-//          click, squeeze = back (mouse 4), quick hard stab = back. Finger tap jumps the
+// Desktop: Pencil hover moves, tip tap = click, press and drag = scroll, double-tap and drag =
+//          drag and drop, barrel double-tap = right click, squeeze = back (mouse 4). Finger tap jumps the
 //          pointer to that spot and left-clicks; 1 drag = trackpad move; 2 drag = scroll
 //          with momentum; 2 tap = right click; 3 tap = Look up; 3 swipe = Spaces / Mission
 //          Control / App Exposé; 4 spread = Show Desktop; 4 pinch = Launchpad; pinch = Cmd +/-.
@@ -87,10 +87,12 @@ final class TouchpadViewController: UIViewController {
     private let pressGrowthFactor: CGFloat = 1.35
     private let pressGrowthMinimum: CGFloat = 3
     /// Squeeze + hover swipe: horizontal Pencil travel (points, while hovering) that counts as a swipe.
-    private let squeezeSwipeDistance: CGFloat = 80
+    /// 80 missed real flicks; a flick also tends to carry the Pencil out of hover range before it is done.
+    private let squeezeSwipeDistance: CGFloat = 50
     /// Tap, then touch down again within this long and move: drag with the left button held (Mac "tap and drag").
     private let tapDragWindow: TimeInterval = 0.35
-    private let tapToDrag = false
+    /// Double-tap-and-hold drags. The press is tagged so the Mac starts a plain drag, not a double-click.
+    private let tapToDrag = true
     /// Four fingers spreading apart by this factor shows the desktop; pinching in to the inverse opens Launchpad.
     private let fourFingerSpreadFactor: CGFloat = 1.4
     /// Pointer acceleration, modelled on the Mac trackpad: slow movements are damped for precision, fast ones
@@ -119,6 +121,7 @@ final class TouchpadViewController: UIViewController {
     private let unlockHold: TimeInterval = 1.0
     private let macsButton = UIButton(type: .system)
     private let wiredButton = UIButton(type: .system)
+    private let bluetoothButton = UIButton(type: .system)
     private let modeButton = UIButton(type: .system)
     private let areaButton = UIButton(type: .system)
     private let anchorButton = UIButton(type: .system)
@@ -132,6 +135,9 @@ final class TouchpadViewController: UIViewController {
     private var pinch: UIPinchGestureRecognizer!
     /// Recognizers that only make sense in Desktop mode; League handles fingers itself.
     private var desktopRecognizers: [UIGestureRecognizer] = []
+    private var pinchMagnifying = false
+    /// How far the fingers must spread or close (as a fraction) before a pinch starts zooming.
+    private let pinchDeadZone: CGFloat = 0.1
 
     // League finger gesture state
     private var leagueActive = Set<UITouch>()
@@ -162,6 +168,8 @@ final class TouchpadViewController: UIViewController {
     private var squeezeHeld = false
     private var squeezeSwipeFired = false
     private var squeezeStartX: CGFloat = 0
+    /// The squeeze began out of hover range: take the start point from the first hover sample instead.
+    private var squeezeStartPending = false
 
     // Desktop raw-touch bookkeeping: tap-and-drag, four-finger pinch/spread
     private var lastOneFingerTap: TimeInterval = -1000
@@ -180,7 +188,11 @@ final class TouchpadViewController: UIViewController {
     private var fourFingerFired = false
     /// Last gesture the pad recognised, shown on the HUD so a gesture that "does nothing" can be diagnosed.
     private var lastGesture = "" {
-        didSet { refreshHUD() }
+        didSet {
+            refreshHUD()
+            // Mirrored to the Mac log so a gesture that "does nothing" can be diagnosed from the Mac.
+            if lastGesture != oldValue { link.note(lastGesture) }
+        }
     }
 
     // MARK: State
@@ -202,6 +214,21 @@ final class TouchpadViewController: UIViewController {
     private let pencilDoubleTapWindow: TimeInterval = 0.3
     private let pencilDoubleTapRadius: CGFloat = 30
     private var lastHoverSent: TimeInterval = 0
+    // Desktop Pencil tip: tap = click, press and drag = scroll, double-tap and drag = drag and drop.
+    private enum PenStroke { case pending, scrolling, dragging }
+    private var penTouch: UITouch?
+    private var penStroke = PenStroke.pending
+    private var penStart = CGPoint.zero
+    private var penLast = CGPoint.zero
+    private var penIsSecondTap = false
+    private var penButtonDown = false
+    private var lastPenTapEnd: TimeInterval = -1000
+    private var lastPenTapPoint = CGPoint.zero
+    /// Tip travel that turns a touch from a tap into a scroll (or, after a double-tap, a drag).
+    private let penSlop: CGFloat = 6
+    /// A touch this soon after a tap, and this close to it, is the second tap of a double-tap.
+    private let penDoubleTapWindow: TimeInterval = 0.35
+    private let penDoubleTapRadius: CGFloat = 40
     // Pencil-first arbitration
     private var pencilHovering = false
     private var pencilContact = false
@@ -221,8 +248,20 @@ final class TouchpadViewController: UIViewController {
     private var seqFirstLand: TimeInterval = 0
     private var seqLastLand: TimeInterval = 0
     /// Contacts this big (UITouch.majorRadius, points) are a palm or the side of the hand, not a fingertip.
-    /// Fingertips read about 10-30; a firm press can reach about 30. Palms read 40 and up.
-    private let palmRadius: CGFloat = 40
+    /// Measured on this iPad (Mac log, 2026-10-30): fingers, often pressed flat for a two-finger scroll,
+    /// read 48-72; palms and the side of the hand read 109-157. 40 rejected real fingers and broke scrolling.
+    private let palmRadius: CGFloat = 95
+    /// Set when a palm touched during the current sequence: it may not click, but it may scroll.
+    private var seqHadPalm = false
+    // Per-sequence summary for the Mac log, so a tap that "didn't register" shows why.
+    private var seqStartPoint = CGPoint.zero
+    private var seqMaxTravel: CGFloat = 0
+    private var seqPencilBlocked = false
+    private var seqClicked = false
+    /// Largest contact among real fingers only (palms excluded), for rescuing taps iPadOS cancelled.
+    private var seqFingerRadius: CGFloat = 0
+    /// The Pencil tip touched the glass during this sequence: no finger tap may click then.
+    private var seqPencilTouched = false
     private var palmTouches = Set<UITouch>()
     /// Largest contact seen in the last sequence, shown on the HUD so the palm threshold can be tuned.
     private var seqMaxRadius: CGFloat = 0
@@ -281,7 +320,7 @@ final class TouchpadViewController: UIViewController {
         pad.delegate = self
         pad.pencilHandler = { [weak self] touch, phase in self?.handlePencil(touch, phase) }
         pad.fingerHandler = { [weak self] touches, phase in self?.arbitrateFingers(touches, phase) }
-        pad.rejectsTouch = { [weak self] touch in self?.isPalm(touch) ?? false }
+        // The two-finger scroll is deliberately not palm-filtered (see palmRadius).
         view.addSubview(pad)
 
         let pencil = UIPencilInteraction()
@@ -314,6 +353,7 @@ final class TouchpadViewController: UIViewController {
         configure(macsButton, title: "Macs", action: #selector(chooseMac))
         setupLockButton()
         configure(wiredButton, title: "Prefer USB: \(link.preferWired ? "on" : "off")", action: #selector(toggleWired))
+        configure(bluetoothButton, title: "Bluetooth: \(link.useBluetooth ? "on" : "off")", action: #selector(toggleBluetooth))
         configure(modeButton, title: mode.title, action: #selector(toggleMode))
         configure(areaButton, title: "", action: #selector(cycleAreaScale))
         configure(anchorButton, title: "", action: #selector(cycleAnchor))
@@ -335,7 +375,9 @@ final class TouchpadViewController: UIViewController {
             lockButton.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -16),
             wiredButton.topAnchor.constraint(equalTo: safe.topAnchor, constant: 4),
             wiredButton.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 16),
-            modeButton.topAnchor.constraint(equalTo: wiredButton.bottomAnchor, constant: 4),
+            bluetoothButton.topAnchor.constraint(equalTo: wiredButton.bottomAnchor, constant: 4),
+            bluetoothButton.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 16),
+            modeButton.topAnchor.constraint(equalTo: bluetoothButton.bottomAnchor, constant: 4),
             modeButton.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 16),
             areaButton.topAnchor.constraint(equalTo: modeButton.bottomAnchor, constant: 4),
             areaButton.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 16),
@@ -363,12 +405,13 @@ final class TouchpadViewController: UIViewController {
         setupLabel.textAlignment = .center
         setupLabel.text = "No Mac running iPad Mouse was found.\n\n" +
             "The Mac needs the companion app once; after that it starts at login and this iPad connects automatically.\n\n" +
-            "Scan to download it. On first launch macOS will say it can't verify the app: open System Settings › Privacy & Security and click Open Anyway. " +
+            "Tap Macs › Send the Mac app to another Mac… to AirDrop it there, or scan to download it. " +
+            "On first launch macOS will say it can't verify the app: open System Settings › Privacy & Security and click Open Anyway. " +
             "Then make sure the Mac and iPad share a Wi-Fi network or a USB-C cable."
         setupLabel.translatesAutoresizingMaskIntoConstraints = false
         setupCard.addSubview(setupLabel)
 
-        setupQR.image = Self.qrImage(for: "https://github.com/HsuChe/iPadMouse/releases/latest")
+        setupQR.image = Self.qrImage(for: Self.macAppDownloadPage)
         setupQR.contentMode = .scaleAspectFit
         setupQR.translatesAutoresizingMaskIntoConstraints = false
         setupCard.addSubview(setupQR)
@@ -625,7 +668,7 @@ final class TouchpadViewController: UIViewController {
         let p = touch.location(in: view)
         lastPencilPoint = p
         switch phase {
-        case .began: pencilContact = true; pencilPresenceChanged()
+        case .began: pencilContact = true; seqPencilTouched = true; pencilPresenceChanged()
         case .ended, .cancelled: pencilContact = false; pencilPresenceChanged()
         default: break
         }
@@ -633,6 +676,10 @@ final class TouchpadViewController: UIViewController {
             if phase == .began {
                 trainer.handle(.tap(fingers: registerPencilTap(at: p) ? 2 : 1, at: p))   // second tap = ATK prompt
             }
+            return
+        }
+        if mode == .desktop {
+            handleDesktopPencil(touch, phase, at: p)
             return
         }
         switch phase {
@@ -675,6 +722,83 @@ final class TouchpadViewController: UIViewController {
         default:
             break
         }
+    }
+
+    /// Desktop Pencil tip. Nothing holds the mouse button until the tip has moved after a double-tap, so a
+    /// slightly wobbly tap is always a click, never a drag.
+    /// - tap: click where the tip touched (two quick taps are a real double-click);
+    /// - press and drag: scroll the page under the pointer, which stays put;
+    /// - tap, then straight back down and drag: drag and drop / select, with the button held until lift.
+    private func handleDesktopPencil(_ touch: UITouch, _ phase: UITouch.Phase, at p: CGPoint) {
+        switch phase {
+        case .began:
+            let now = CACurrentMediaTime()
+            penTouch = touch
+            penStroke = .pending
+            penStart = p
+            penLast = p
+            penButtonDown = false
+            penIsSecondTap = now - lastPenTapEnd < penDoubleTapWindow
+                && hypot(p.x - lastPenTapPoint.x, p.y - lastPenTapPoint.y) < penDoubleTapRadius
+            sendAbsolute(p)                              // the pointer jumps to the tip, so a click lands there
+
+        case .moved:
+            guard touch == penTouch else { return }
+            switch penStroke {
+            case .pending:
+                guard hypot(p.x - penStart.x, p.y - penStart.y) > penSlop else { return }
+                if penIsSecondTap {
+                    penStroke = .dragging
+                    penButtonDown = true
+                    lastGesture = "Pencil double-tap and drag: dragging"
+                    sendAbsolute(penStart)
+                    link.send(Packet(kind: .buttonDown, button: MouseButton.left.rawValue, flags: ClickSource.tapDrag.rawValue))
+                    sendAbsolute(p)
+                } else {
+                    penStroke = .scrolling
+                    lastGesture = "Pencil press and drag: scroll"
+                    link.send(Packet(kind: .scroll, flags: ScrollPhase.began.rawValue))
+                    sendPenScroll(to: p)
+                }
+            case .scrolling:
+                sendPenScroll(to: p)
+            case .dragging:
+                sendAbsolute(p)
+            }
+
+        case .ended, .cancelled:
+            guard touch == penTouch else { return }
+            switch penStroke {
+            case .pending where phase == .ended:
+                // A tap. Two in a row are a genuine double-click, so the Mac counts them normally.
+                lastGesture = penIsSecondTap ? "Pencil double-tap: double-click" : "Pencil tap: click"
+                click(.left, .pencilTip)
+                lastPenTapEnd = penIsSecondTap ? -1000 : CACurrentMediaTime()
+                lastPenTapPoint = penStart
+            case .scrolling:
+                link.send(Packet(kind: .scroll, flags: ScrollPhase.ended.rawValue))
+            case .dragging:
+                sendAbsolute(p)
+                link.send(Packet(kind: .buttonUp, button: MouseButton.left.rawValue))
+            default:
+                break
+            }
+            penButtonDown = false
+            penStroke = .pending
+            penTouch = nil
+
+        default:
+            break
+        }
+    }
+
+    /// Tip travel becomes scroll travel, signed like a two-finger drag: the page follows the tip.
+    private func sendPenScroll(to p: CGPoint) {
+        let d = CGPoint(x: p.x - penLast.x, y: p.y - penLast.y)
+        penLast = p
+        guard d != .zero else { return }
+        link.send(Packet(kind: .scroll, flags: ScrollPhase.changed.rawValue,
+                         dx: Float(d.x * scrollScale), dy: Float(d.y * scrollScale)))
     }
 
     /// Returns true when this tap is the second of a quick double-tap at roughly the same spot.
@@ -738,11 +862,10 @@ final class TouchpadViewController: UIViewController {
             if isPalm(t) {
                 if !palmTouches.contains(t) {
                     palmTouches.insert(t)
-                    if fingersDown.contains(t) {
-                        fingersDown.remove(t)
-                        if !fingersIgnored { fingersIgnored = true; cancelFingerInput() }
-                    }
-                    lastGesture = "palm ignored (\(Int(t.majorRadius)) pt contact)"
+                    // A contact that grows to palm size spoils any tap in this sequence, but it does not
+                    // cancel a scroll already under way: flat scrolling fingers can grow that big.
+                    seqHadPalm = true
+                    lastGesture = "palm ignored (\(Int(t.majorRadius)) pt contact, \(fingersDown.count) fingers down)"
                 }
             } else {
                 fingers.insert(t)
@@ -761,18 +884,50 @@ final class TouchpadViewController: UIViewController {
                 fingersIgnored = false
                 seqMaxFingers = 0
                 seqFirstLand = now
+                seqHadPalm = false
+                seqStartPoint = touches.first?.location(in: view) ?? .zero
+                seqMaxTravel = 0
+                seqPencilBlocked = false
+                seqClicked = false
+                seqFingerRadius = 0
+                seqPencilTouched = pencilContact
+                // Nothing is on the glass, so no gesture can still be in progress. Starting clean means a
+                // lost lift-off can never leave the pad believing three fingers are still down.
+                desktopActive.removeAll()
+                threeFingerActive = false
+                fourFingerStartSpread = 0
+                leagueActive.removeAll()
+                leaguePoints.removeAll()
             }
             fingersDown.formUnion(fingers)
+            for t in fingers { seqFingerRadius = max(seqFingerRadius, t.majorRadius) }
             seqMaxFingers = max(seqMaxFingers, fingersDown.count)
             seqLastLand = now
             if pencilOwnsPad, !fingersIgnored {
                 fingersIgnored = true
+                seqPencilBlocked = true
                 cancelFingerInput()
+            }
+        case .moved:
+            for t in fingers { seqFingerRadius = max(seqFingerRadius, t.majorRadius) }
+            for t in fingers where fingersDown.count == 1 {
+                let p = t.location(in: view)
+                seqMaxTravel = max(seqMaxTravel, hypot(p.x - seqStartPoint.x, p.y - seqStartPoint.y))
             }
         case .ended, .cancelled:
             fingersDown.subtract(touches)
             if fingersDown.isEmpty, palmTouches.isEmpty {
                 lastSeqMaxRadius = seqMaxRadius
+                rescueTap(phase)
+                if seqMaxFingers <= 1 {
+                    // Summarise one-finger touches: these are the taps that may or may not have clicked.
+                    let ms = Int((CACurrentMediaTime() - seqFirstLand) * 1000)
+                    link.note("touch: \(ms) ms, moved \(Int(seqMaxTravel)) pt, contact \(Int(seqMaxRadius)) pt"
+                        + (seqPencilBlocked || pencilOwnsPad ? ", PENCIL NEAR" : "")
+                        + (seqHadPalm ? ", palm" : "")
+                        + (phase == .cancelled ? ", CANCELLED" : "")
+                        + (seqClicked ? " -> click" : " -> no click"))
+                }
                 seqMaxRadius = 0
                 refreshHUD()
             }
@@ -783,8 +938,28 @@ final class TouchpadViewController: UIViewController {
             if fingersDown.isEmpty { fingersIgnored = false; refreshHUD() }
             return
         }
-        guard !fingers.isEmpty else { return }
-        handleFingers(fingers, phase)
+        // Lift-offs go through for every touch, palms included: a finger that grew to palm size mid-touch
+        // was already handed on, and the handlers must hear that it lifted.
+        let forward = (phase == .ended || phase == .cancelled) ? touches : fingers
+        guard !forward.isEmpty else { return }
+        handleFingers(forward, phase)
+    }
+
+    /// Some taps never reach the tap recognizer, and get decided here when the last finger lifts:
+    /// - iPadOS's own palm rejection cancelled the touch, fingertip included, because a hand brushed the glass;
+    /// - the Pencil was hovering, so the Pencil-first rule held the fingers back.
+    /// Either way, one short, still, fingertip-sized contact was a tap and clicks. Glides, scrolls and swipes
+    /// stay blocked while the Pencil hovers, and nothing clicks if the Pencil tip touched the glass.
+    private func rescueTap(_ phase: UITouch.Phase) {
+        let ms = CACurrentMediaTime() - seqFirstLand
+        guard phase == .cancelled || seqPencilBlocked else { return }
+        guard mode == .desktop, !seqClicked, !seqPencilTouched, !pencilContact,
+              seqMaxFingers == 1, ms < 0.3, seqMaxTravel < 10,
+              seqFingerRadius > 0, seqFingerRadius < 60 else { return }
+        seqClicked = true
+        lastOneFingerTap = CACurrentMediaTime()
+        lastGesture = seqPencilBlocked ? "tap while Pencil hovers: click" : "tap rescued (iPadOS cancelled it for a palm)"
+        click(.left, .fingerTap)
     }
 
     /// Abandons whatever the fingers were doing: no click, drag, scroll or swipe survives.
@@ -997,6 +1172,10 @@ final class TouchpadViewController: UIViewController {
     /// Fingers are a trackpad: a tap clicks wherever the pointer already is.
     /// Whether this sequence really was an N-finger tap: exactly N fingers, all landing together.
     private func sequenceIsTap(fingers: Int, name: String) -> Bool {
+        guard !seqHadPalm else {
+            lastGesture = "\(name) ignored: a palm touched"
+            return false
+        }
         guard seqMaxFingers == fingers else {
             lastGesture = "\(name) ignored: \(seqMaxFingers) fingers touched"
             return false
@@ -1012,6 +1191,7 @@ final class TouchpadViewController: UIViewController {
     @objc private func handleOneFingerTap(_ g: UITapGestureRecognizer) {
         guard sequenceIsTap(fingers: 1, name: "tap") else { return }
         lastOneFingerTap = CACurrentMediaTime()
+        seqClicked = true
         lastGesture = "1-finger tap: click"
         click(.left, .fingerTap)
     }
@@ -1035,11 +1215,9 @@ final class TouchpadViewController: UIViewController {
             fingerCircle.reset(at: p)
             strokeID &+= 1
             // Tap, then straight back down and move: hold the button so the pointer drags (Mac "tap and drag").
-            // Off by default, as on the Mac: tapping and then gliding away sent a second click, which macOS
-            // read as a double-click.
             tapDragging = tapToDrag && lastFingerDown - lastOneFingerTap < tapDragWindow && lastFingerDown >= lastOneFingerTap
             if tapDragging {
-                lastGesture = "tap and drag"
+                lastGesture = "double-tap-and-hold: dragging"
                 link.send(Packet(kind: .buttonDown, button: MouseButton.left.rawValue, flags: ClickSource.tapDrag.rawValue))
             }
 
@@ -1100,6 +1278,11 @@ final class TouchpadViewController: UIViewController {
 
     /// With the Pencil Pro squeezed while hovering, moving it left or right changes Space. Fires once per squeeze.
     private func checkSqueezeSwipe(at p: CGPoint) {
+        if squeezeStartPending {
+            squeezeStartPending = false
+            squeezeStartX = p.x
+            return
+        }
         let travel = p.x - squeezeStartX
         guard !squeezeSwipeFired, abs(travel) >= squeezeSwipeDistance else { return }
         squeezeSwipeFired = true
@@ -1112,14 +1295,32 @@ final class TouchpadViewController: UIViewController {
         }
     }
 
+    /// Pinch sends a real magnify gesture, like the Mac trackpad: smooth zoom in images, maps, PDFs and web
+    /// pages, nothing elsewhere. (It used to press Cmd +/-, which resized text everywhere and fired easily
+    /// during two-finger scrolls.) The fingers must spread or close by `pinchDeadZone` before zooming starts,
+    /// so a scroll with slightly drifting fingers never zooms.
     @objc private func handlePinch(_ g: UIPinchGestureRecognizer) {
-        guard mode == .desktop, g.state == .changed else { return }
-        if g.scale > 1.25 {
-            key(KeyCode.equals, [.command])
+        guard mode == .desktop else { return }
+        switch g.state {
+        case .began:
+            pinchMagnifying = false
+        case .changed:
+            if !pinchMagnifying {
+                guard abs(g.scale - 1) >= pinchDeadZone else { return }
+                pinchMagnifying = true
+                g.scale = 1
+                lastGesture = "pinch: zoom"
+                link.send(Packet(kind: .magnify, flags: 1))
+                return
+            }
+            let delta = g.scale - 1
             g.scale = 1
-        } else if g.scale < 0.8 {
-            key(KeyCode.minus, [.command])
-            g.scale = 1
+            link.send(Packet(kind: .magnify, flags: 2, dx: Float(delta)))
+        case .ended, .cancelled, .failed:
+            if pinchMagnifying { link.send(Packet(kind: .magnify, flags: 3)) }
+            pinchMagnifying = false
+        default:
+            break
         }
     }
 
@@ -1189,7 +1390,7 @@ final class TouchpadViewController: UIViewController {
     private func refreshLock() {
         lockButton.setTitle(locked ? "Unlock (hold 1 s)" : "Lock iPad", for: .normal)
         lockButton.setTitleColor(locked ? UIColor(red: 1, green: 0.6, blue: 0.2, alpha: 1) : UIColor(white: 0.5, alpha: 1), for: .normal)
-        for b in [macsButton, wiredButton, modeButton, areaButton, anchorButton, trackingButton, accelButton] {
+        for b in [macsButton, wiredButton, bluetoothButton, modeButton, areaButton, anchorButton, trackingButton, accelButton] {
             b.isHidden = locked
         }
         trainer.isUserInteractionEnabled = !locked
@@ -1222,6 +1423,7 @@ final class TouchpadViewController: UIViewController {
         hud.alpha = dimmed ? 0 : 1
         outline.alpha = dimmed ? 0 : 1
         wiredButton.alpha = dimmed ? 0.02 : 1
+        bluetoothButton.alpha = dimmed ? 0.02 : 1
         modeButton.alpha = dimmed ? 0.02 : 1
         areaButton.alpha = dimmed ? 0.02 : 1
         anchorButton.alpha = dimmed ? 0.02 : 1
@@ -1236,6 +1438,11 @@ final class TouchpadViewController: UIViewController {
     @objc private func appWillResignActive() {
         if dimmed { screen.brightness = savedBrightness }
         // Never leave a button held on the Mac when the app goes to the background.
+        if penButtonDown { link.send(Packet(kind: .buttonUp, button: MouseButton.left.rawValue)) }
+        if penStroke == .scrolling { link.send(Packet(kind: .scroll, flags: ScrollPhase.ended.rawValue)) }
+        penButtonDown = false
+        penStroke = .pending
+        penTouch = nil
         if pencilDownSent, !pencilConsumed {
             link.send(Packet(kind: .buttonUp, button: pencilButton.rawValue))
         }
@@ -1265,25 +1472,57 @@ final class TouchpadViewController: UIViewController {
                 self?.link.connect(toMacNamed: name)
             })
         }
+        sheet.addAction(UIAlertAction(title: "Send the Mac app to another Mac…", style: .default) { [weak self] _ in
+            self?.sendMacApp()
+        })
         sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         sheet.popoverPresentationController?.sourceView = macsButton
         sheet.popoverPresentationController?.sourceRect = macsButton.bounds
         present(sheet, animated: true)
     }
 
+    /// Only Macs already running the companion app can be listed and connected to. For any other Mac, this
+    /// opens the share sheet with the Mac app so it can be AirDropped there: AirDrop shows the nearby Macs,
+    /// and the copy sent is the one built alongside this iPad app, so the two always speak the same protocol.
+    /// Someone at that Mac still has to accept it, open it and allow it; nothing can install itself remotely.
+    private func sendMacApp() {
+        var items: [Any] = []
+        if let bundled = Bundle.main.url(forResource: "iPad-Mouse-for-Mac", withExtension: "zip") {
+            // Share a copy with a plain name; the file inside the app bundle cannot be handed out directly.
+            let copy = FileManager.default.temporaryDirectory.appendingPathComponent("iPad Mouse for Mac.zip")
+            try? FileManager.default.removeItem(at: copy)
+            if (try? FileManager.default.copyItem(at: bundled, to: copy)) != nil { items = [copy] }
+        }
+        if items.isEmpty, let page = URL(string: Self.macAppDownloadPage) {
+            items = [page]                      // this build carries no Mac app: send the download page instead
+        }
+        let share = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        share.popoverPresentationController?.sourceView = macsButton
+        share.popoverPresentationController?.sourceRect = macsButton.bounds
+        present(share, animated: true)
+    }
+
+    private static let macAppDownloadPage = "https://github.com/HsuChe/iPadMouse/releases/latest"
+
     @objc private func toggleWired() {
         link.preferWired.toggle()
         wiredButton.setTitle("Prefer USB: \(link.preferWired ? "on" : "off")", for: .normal)
+    }
+
+    @objc private func toggleBluetooth() {
+        link.useBluetooth.toggle()
+        bluetoothButton.setTitle("Bluetooth: \(link.useBluetooth ? "on" : "off")", for: .normal)
     }
 
     private func refreshHUD() {
         let hint: String
         switch mode {
         case .desktop:
-            hint = "Pencil: hover moves · touch clicks · double-tap right-clicks · squeeze/stab = back · hover + squeeze + move left/right = Spaces · hover in circles scrolls\n" +
-                   "Fingers: 1 drag moves · 1 tap clicks\n" +
+            hint = "Pencil: hover moves · tap clicks · press and drag scrolls · double-tap and drag = drag and drop · barrel double-tap right-clicks\n" +
+                   "squeeze = back · squeeze + flick left/right = Spaces · hover in circles scrolls\n" +
+                   "Fingers: 1 drag moves · 1 tap clicks · tap then hold and move = drag and drop\n" +
                    "2 drag scrolls · 2 tap right-clicks · 3 tap looks up · 3 swipe Spaces/Mission Control/Exposé\n" +
-                   "4 spread = desktop · 4 pinch = Launchpad · pinch zooms"
+                   "4 spread = desktop · 4 pinch = Launchpad · pinch zooms images and pages"
         case .league:
             hint = "Finger: drag = move pointer · tap = move cmd · firm press = attack/select · 2-tap = attack · 3-tap = summoner (M4) · 4-tap = item (M5)\n" +
                    "Pencil: hover aims · tip tap = move · tip double-tap = attack-move · squeeze = M4"
@@ -1292,7 +1531,7 @@ final class TouchpadViewController: UIViewController {
         }
         hud.text = (mode == .training ? "" : status + "\n") + (locked ? lockHint + "\n" : "") + hint
             + (rateText.isEmpty ? "" : "\n" + rateText)
-            + "\ninput: " + (pencilOwnsPad ? "Pencil (fingers ignored)" : "fingers")
+            + "\nlink: " + link.carrier + " · input: " + (pencilOwnsPad ? "Pencil (fingers ignored)" : "fingers")
             + (lastSeqMaxRadius > 0 ? " · largest contact \(Int(lastSeqMaxRadius)) pt (palm ≥ \(Int(palmRadius)))" : "")
             + (mode == .desktop && !lastGesture.isEmpty ? " · last gesture: " + lastGesture : "")
     }
@@ -1303,6 +1542,8 @@ final class TouchpadViewController: UIViewController {
 extension TouchpadViewController: UIScrollViewDelegate {
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         if threeFingerActive || fingersBlocked {
+            lastGesture = "2-finger scroll blocked: " + (threeFingerActive ? "three fingers down"
+                : pencilOwnsPad ? "Pencil near" : "touch already ignored (palm or Pencil)")
             // Two of the three swipe fingers started a scroll; cancel it before it sends anything.
             pad.panGestureRecognizer.isEnabled = false
             pad.panGestureRecognizer.isEnabled = true
@@ -1313,6 +1554,7 @@ extension TouchpadViewController: UIScrollViewDelegate {
             link.send(Packet(kind: .scroll, flags: ScrollPhase.momentumEnded.rawValue))
         }
         lastOffset = scrollView.contentOffset
+        lastGesture = "2-finger scroll"
         link.send(Packet(kind: .scroll, flags: ScrollPhase.began.rawValue))
     }
 
@@ -1372,13 +1614,16 @@ extension TouchpadViewController: UIPencilInteractionDelegate {
     }
 
     func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze) {
-        // Where the Pencil is hovering, when the system reports it; otherwise the last hover sample.
-        let hoverPoint = squeeze.hoverPose.map { interaction.view?.convert($0.location, to: view) ?? $0.location }
+        // Where the Pencil is hovering. Always the hover recognizer's last sample: the squeeze's own hover
+        // pose came back without the scroll view's 50,000-point content offset, so the start point landed far
+        // to the left and every squeeze fired "swipe right" at once.
+        let hoverPoint: CGPoint? = squeeze.hoverPose == nil ? nil : lastPencilPoint
         switch squeeze.phase {
         case .began:
             squeezeHeld = true
             squeezeSwipeFired = false
-            squeezeStartX = (hoverPoint ?? lastPencilPoint).x
+            squeezeStartX = lastPencilPoint.x
+            squeezeStartPending = hoverPoint == nil
             lastGesture = "squeeze held" + (hoverPoint == nil ? " (not hovering)" : ", move left/right to switch Space")
             return
         case .changed:
@@ -1388,7 +1633,8 @@ extension TouchpadViewController: UIPencilInteractionDelegate {
             squeezeHeld = false
             return
         case .ended:
-            if squeezeHeld, mode == .desktop, let hoverPoint { checkSqueezeSwipe(at: hoverPoint) }
+            // Judge the flick on release from the last hover sample, even if the flick carried the Pencil out of range.
+            if squeezeHeld, mode == .desktop, !squeezeStartPending { checkSqueezeSwipe(at: lastPencilPoint) }
             let swiped = squeezeHeld && squeezeSwipeFired
             squeezeHeld = false
             squeezeSwipeFired = false

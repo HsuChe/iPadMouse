@@ -1,6 +1,7 @@
 // Advertises "_ipadmouse._udp" over Bonjour (Wi-Fi, peer-to-peer and any USB network link)
 // and feeds incoming packets to the Injector.
 
+import AppKit
 import Foundation
 import Network
 import Darwin
@@ -14,6 +15,22 @@ final class Receiver {
     private let queue = DispatchQueue(label: "ipadmouse.receiver", qos: .userInteractive)
     private var listener: NWListener?
     private var connections: [NWConnection] = []
+
+    /// One iPad link, whatever carries it: a UDP flow (Wi-Fi or USB) or a Bluetooth connection.
+    private final class Peer {
+        let label: String
+        /// UDP links are also told the Mac's USB addresses; that means nothing over Bluetooth.
+        let overNetwork: Bool
+        let send: (Data) -> Void
+        init(label: String, overNetwork: Bool, send: @escaping (Data) -> Void) {
+            self.label = label
+            self.overNetwork = overNetwork
+            self.send = send
+        }
+    }
+    private var networkPeers: [ObjectIdentifier: Peer] = [:]
+    private var bluetoothPeers: [UUID: Peer] = [:]
+    private lazy var bluetooth = BluetoothListener(queue: queue)
     private var lastPacket = Date()
     private var watchdog: DispatchSourceTimer?
 
@@ -106,6 +123,10 @@ final class Receiver {
     private var lastStroke: UInt8 = 0
     private var relativeCount = 0
     private var relativeWindow: TimeInterval = 0
+    /// Arrival time minus the iPad's send time, smallest and largest in the window. The two clocks differ,
+    /// so only the spread means anything: it is how much later the slowest packet was than the quickest.
+    private var relativeOffsetMin = Double.greatestFiniteMagnitude
+    private var relativeOffsetMax = -Double.greatestFiniteMagnitude
     /// A gap of 40 ms or more inside one stroke (finger still on the glass) is a pause. The iPad's send
     /// times show whose fault it is: if the iPad also sent nothing for that long, the finger was still or
     /// the iPad stalled (a large touch age means the iPad stalled); if the iPad sent on time, the link held
@@ -122,17 +143,85 @@ final class Receiver {
             log(String(format: "finger move PAUSE %.0f ms in stroke %d: iPad send gap %.0f ms, touch age %.0f ms → %@",
                        gap * 1000, stroke, sentGap * 1000, touchAgeMs, cause))
         }
-        if stroke != lastStroke || gap >= 2 { relativeCount = 0; relativeWindow = now }
+        if stroke != lastStroke || gap >= 2 {
+            // A stroke of half a second or more still gets a line; shorter ones say too little.
+            if relativeCount >= 15, lastRelativeMove - relativeWindow >= 0.5 { logRelativeWindow(until: lastRelativeMove) }
+            relativeCount = 0
+            relativeWindow = now
+            relativeOffsetMin = Double.greatestFiniteMagnitude
+            relativeOffsetMax = -Double.greatestFiniteMagnitude
+        }
         lastRelativeMove = now
         lastRelativeSent = sentAt
         lastStroke = stroke
         relativeCount += 1
+        let offset = now - Double(sentAt)
+        relativeOffsetMin = min(relativeOffsetMin, offset)
+        relativeOffsetMax = max(relativeOffsetMax, offset)
         if now - relativeWindow >= 2 {
-            log(String(format: "finger moves: %.0f/s", Double(relativeCount) / (now - relativeWindow)))
+            logRelativeWindow(until: now)
             relativeCount = 0
             relativeWindow = now
+            relativeOffsetMin = Double.greatestFiniteMagnitude
+            relativeOffsetMax = -Double.greatestFiniteMagnitude
         }
     }
+    // The pointer sometimes turns invisible on the Mac while the iPad is moving it (hover highlights still
+    // follow it), until a switch to another Space brings it back. Tested 2026-11-05: a pointer hidden by
+    // typing comes back on our first move, but one hidden by an app's own hide call stays hidden whatever
+    // moves arrive. So when it stays invisible while moves keep coming, log which app is in front.
+    private static let cursorIsVisible: (@convention(c) () -> UInt32)? = {
+        typealias Fn = @convention(c) () -> UInt32
+        if let sky = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_NOW),
+           let p = dlsym(sky, "SLCursorIsVisible") { return unsafeBitCast(p, to: Fn.self) }
+        if let p = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGCursorIsVisible") { return unsafeBitCast(p, to: Fn.self) }
+        return nil
+    }()
+    private var lastVisibilityCheck: TimeInterval = 0
+    private var hiddenSince: TimeInterval?
+    private var hiddenChecks = 0
+    private var movesWhileHidden = 0
+    private var hiddenLogged = false
+
+    private func checkPointerVisible() {
+        guard let visible = Self.cursorIsVisible else { return }
+        if hiddenSince != nil { movesWhileHidden += 1 }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastVisibilityCheck >= 0.25 else { return }
+        let steady = now - lastVisibilityCheck < 1          // moves have kept coming since the last check
+        lastVisibilityCheck = now
+        if visible() != 0 {
+            if hiddenLogged, let since = hiddenSince {
+                log(String(format: "pointer visible again after %.1f s (%d moves arrived while it was hidden)",
+                           now - since, movesWhileHidden))
+            }
+            hiddenSince = nil
+            hiddenLogged = false
+            return
+        }
+        if hiddenSince == nil { hiddenSince = now; hiddenChecks = 0; movesWhileHidden = 0 }
+        hiddenChecks = steady ? hiddenChecks + 1 : 1
+        // Three checks in a row during one steady movement: hidden for over half a second of real motion.
+        guard !hiddenLogged, hiddenChecks >= 3 else { return }
+        hiddenLogged = true
+        // A recent key press points at "hidden while typing", which each new key press renews.
+        let sinceKey = CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown)
+        let moves = movesWhileHidden
+        DispatchQueue.main.async {
+            let front = NSWorkspace.shared.frontmostApplication?.localizedName ?? "unknown"
+            self.queue.async {
+                self.log(String(format: "pointer INVISIBLE while the iPad moves it (%d moves so far); frontmost app: %@; last key press %.1f s ago",
+                                moves, front, sinceKey))
+            }
+        }
+    }
+
+    private func logRelativeWindow(until end: TimeInterval) {
+        log(String(format: "finger moves: %.0f/s over %.1f s, delivery spread %.0f ms",
+                   Double(relativeCount) / max(end - relativeWindow, 0.001), end - relativeWindow,
+                   (relativeOffsetMax - relativeOffsetMin) * 1000))
+    }
+
     private let stampFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -176,6 +265,7 @@ final class Receiver {
         }
         listener.start(queue: queue)
         self.listener = listener
+        startBluetooth()
 
         // If packets stop while a button is held (cable pulled, iPad app backgrounded), let go.
         let timer = DispatchSource.makeTimerSource(queue: queue)
@@ -193,22 +283,49 @@ final class Receiver {
         queue.async { self.injector.releaseAll() }
     }
 
+    /// The same packets, arriving over Bluetooth instead of UDP.
+    private func startBluetooth() {
+        bluetooth.onLog = { [weak self] text in self?.log("Bluetooth: \(text)") }
+        bluetooth.onData = { [weak self] id, data in
+            guard let self else { return }
+            let peer = self.bluetoothPeers[id] ?? Peer(label: "Bluetooth", overNetwork: false) { [weak self] reply in
+                self?.bluetooth.send(reply, to: id)
+            }
+            self.bluetoothPeers[id] = peer
+            self.dispatch(data, from: peer)
+        }
+        bluetooth.onGone = { [weak self] id in
+            guard let self, let peer = self.bluetoothPeers.removeValue(forKey: id) else { return }
+            self.forget(peer)
+            self.onStatus?("iPad disconnected (Bluetooth)")
+        }
+        bluetooth.start(name: Host.current().localizedName ?? "Mac")
+    }
+
+    private func forget(_ peer: Peer) {
+        authorized.remove(ObjectIdentifier(peer))
+        names[ObjectIdentifier(peer)] = nil
+    }
+
     /// Re-send the display size to every iPad, e.g. after the target display changes.
     func broadcastConfig() {
         queue.async {
-            for c in self.connections { self.sendConfig(to: c) }
+            for peer in Array(self.networkPeers.values) + Array(self.bluetoothPeers.values) { self.sendConfig(to: peer) }
         }
     }
 
     private func accept(_ connection: NWConnection) {
         connections.append(connection)
+        let peer = Peer(label: "\(connection.endpoint)", overNetwork: true) { [weak connection] data in
+            connection?.send(content: data, completion: .idempotent)
+        }
+        networkPeers[ObjectIdentifier(connection)] = peer
         connection.stateUpdateHandler = { [weak self, weak connection] state in
             guard let self, let connection else { return }
             switch state {
             case .failed, .cancelled:
                 self.connections.removeAll { $0 === connection }
-                self.authorized.remove(ObjectIdentifier(connection))
-                self.names[ObjectIdentifier(connection)] = nil
+                if let peer = self.networkPeers.removeValue(forKey: ObjectIdentifier(connection)) { self.forget(peer) }
                 self.onStatus?("iPad disconnected")
             default:
                 break
@@ -221,12 +338,8 @@ final class Receiver {
     private func receive(on connection: NWConnection) {
         connection.receiveMessage { [weak self] data, _, _, error in
             guard let self else { return }
-            if let data, let name = Packet.parseName(data) {
-                self.names[ObjectIdentifier(connection)] = name
-            } else if let data, let token = Packet.token(fromHello: data) {
-                self.handleHello(token: token, from: connection)
-            } else if let data, let packet = Packet(data: data) {
-                self.handle(packet, from: connection)
+            if let data, let peer = self.networkPeers[ObjectIdentifier(connection)] {
+                self.dispatch(data, from: peer)
             }
             if error == nil {
                 self.receive(on: connection)
@@ -234,14 +347,27 @@ final class Receiver {
         }
     }
 
-    private func sendConfig(to connection: NWConnection) {
+    /// One packet from an iPad, over any link.
+    private func dispatch(_ data: Data, from peer: Peer) {
+        if let name = Packet.parseName(data) {
+            names[ObjectIdentifier(peer)] = name
+        } else if let note = Packet.parseNote(data) {
+            if authorized.contains(ObjectIdentifier(peer)) { log("iPad: \(note)") }
+        } else if let token = Packet.token(fromHello: data) {
+            handleHello(token: token, from: peer)
+        } else if let packet = Packet(data: data) {
+            handle(packet, from: peer)
+        }
+    }
+
+    private func sendConfig(to peer: Peer) {
         let size = injector.displaySize
         let reply = Packet(kind: .config, x: Float(size.width), y: Float(size.height))
-        connection.send(content: reply.encoded(), completion: .idempotent)
+        peer.send(reply.encoded())
         // Tell the iPad how to reach us directly over any wired (USB) link, bypassing Bonjour.
-        if let port = listener?.port?.rawValue {
+        if peer.overNetwork, let port = listener?.port?.rawValue {
             for address in Self.wiredLinkLocalAddresses() {
-                connection.send(content: Packet.peerAddress(ipv6: address, port: port), completion: .idempotent)
+                peer.send(Packet.peerAddress(ipv6: address, port: port))
             }
         }
     }
@@ -267,22 +393,22 @@ final class Receiver {
         return result
     }
 
-    private func handleHello(token: [UInt8], from connection: NWConnection) {
+    private func handleHello(token: [UInt8], from peer: Peer) {
         lastPacket = Date()
-        let id = ObjectIdentifier(connection)
+        let id = ObjectIdentifier(peer)
         let key = Data(token)
         let name = names[id] ?? "iPad"
         if approvedTokens.contains(key) {
             if !authorized.contains(id) {
                 authorized.insert(id)
                 onStatus?("\(name) connected")
-                log("authorized \(name) on \(connection.endpoint)")
+                log("authorized \(name) on \(peer.label)")
             }
-            sendConfig(to: connection)
+            sendConfig(to: peer)
         } else if deniedTokens.contains(key) {
-            connection.send(content: Packet(kind: .pairDenied).encoded(), completion: .idempotent)
+            peer.send(Packet(kind: .pairDenied).encoded())
         } else {
-            connection.send(content: Packet(kind: .pairPending).encoded(), completion: .idempotent)
+            peer.send(Packet(kind: .pairPending).encoded())
             if pendingToken == nil {
                 pendingToken = key
                 onStatus?("\(name) is asking to connect…")
@@ -291,20 +417,22 @@ final class Receiver {
         }
     }
 
-    private func handle(_ p: Packet, from connection: NWConnection) {
+    private func handle(_ p: Packet, from peer: Peer) {
         lastPacket = Date()
-        guard authorized.contains(ObjectIdentifier(connection)) else { return }
+        guard authorized.contains(ObjectIdentifier(peer)) else { return }
         switch p.kind {
-        case .hello, .name, .pairPending, .pairDenied:
+        case .hello, .name, .note, .pairPending, .pairDenied:
             break
         case .config, .peerAddress:
             break
         case .moveAbsolute:
             recordMove(sentStamp: p.dx)
             injector.moveAbsolute(nx: p.x, ny: p.y)
+            checkPointerVisible()
         case .moveRelative:
             recordRelativeMove(stroke: p.button, sentAt: p.x, touchAgeMs: p.y)
             injector.moveRelative(dx: CGFloat(p.dx), dy: CGFloat(p.dy))
+            checkPointerVisible()
         case .buttonDown:
             // Which input sent it, and how soon after the previous press of the same button: two presses
             // closer than the double-click interval are what macOS turns into a double-click.
@@ -313,10 +441,12 @@ final class Receiver {
             lastDownAt[p.button] = now
             let source = ClickSource(rawValue: p.flags)?.label ?? "source \(p.flags)"
             log("buttonDown \(p.button) (\(MouseButton(rawValue: p.button).map { "\($0)" } ?? "?")) from \(source)\(gap)")
-            injector.button(p.button, down: true)
+            injector.button(p.button, down: true, singleClick: p.flags == ClickSource.tapDrag.rawValue)
         case .buttonUp:
             log("buttonUp \(p.button)")
             injector.button(p.button, down: false)
+        case .magnify:
+            injector.magnify(by: Double(p.dx), phase: p.flags)
         case .scroll:
             if p.flags == ScrollPhase.began.rawValue, p.button != 0 {
                 log("circle scroll started (\(p.button == 1 ? "finger" : "Pencil")): pointer frozen")

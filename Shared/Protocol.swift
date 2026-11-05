@@ -18,6 +18,8 @@ enum PacketKind: UInt8 {
     case pairPending = 9    // Mac -> iPad: this iPad is not approved yet; the Mac is asking its user
     case pairDenied = 10    // Mac -> iPad: the Mac's user said no
     case name = 11          // iPad -> Mac: bytes 4-19 = UTF-8 device name (truncated)
+    case magnify = 13       // dx = change in magnification since the last packet, flags = 1 began, 2 changed, 3 ended
+    case note = 12          // iPad -> Mac: bytes 4... = UTF-8 diagnostic text for the Mac log (up to 120 bytes)
 }
 
 /// Values match CGMouseButton numbering, so the Mac can pass them straight through.
@@ -137,6 +139,20 @@ extension Packet {
         return String(decoding: bytes, as: UTF8.self)
     }
 
+    /// A diagnostic line for the Mac log. Longer than other packets; the Mac reads up to 120 bytes of text.
+    static func note(_ text: String) -> Data {
+        var b: [UInt8] = [PacketKind.note.rawValue, 0, 0, 0]
+        b += Array(text.utf8.prefix(120))
+        while b.count < byteCount { b.append(0) }
+        return Data(b)
+    }
+
+    static func parseNote(_ data: Data) -> String? {
+        let b = [UInt8](data)
+        guard b.count >= byteCount, b[0] == PacketKind.note.rawValue else { return nil }
+        return String(decoding: b[4...].prefix { $0 != 0 }, as: UTF8.self)
+    }
+
     static func parsePeerAddress(_ data: Data) -> (ipv6: [UInt8], port: UInt16)? {
         let b = [UInt8](data)
         guard b.count >= byteCount, b[0] == PacketKind.peerAddress.rawValue else { return nil }
@@ -152,4 +168,14 @@ extension Packet {
         }
         self.init(kind: kind, button: b[1], flags: b[2], x: float(at: 4), y: float(at: 8), dx: float(at: 12), dy: float(at: 16))
     }
+}
+
+/// Bluetooth LE link: the Mac advertises this service, the iPad connects to it. Each write or notification
+/// carries exactly one packet, the same bytes a UDP datagram would.
+enum BluetoothLinkID {
+    static let service = "7C0A1E50-6B1D-4C8E-9B55-1A2D3E4F5A60"
+    /// iPad -> Mac, written without response.
+    static let fromIPad = "7C0A1E51-6B1D-4C8E-9B55-1A2D3E4F5A60"
+    /// Mac -> iPad, sent as notifications.
+    static let toIPad = "7C0A1E52-6B1D-4C8E-9B55-1A2D3E4F5A60"
 }

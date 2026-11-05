@@ -38,12 +38,39 @@ final class Injector {
         let b = CGDisplayBounds(targetDisplay)
         let p = CGPoint(x: b.minX + CGFloat(nx) * (b.width - 1),
                         y: b.minY + CGFloat(ny) * (b.height - 1))
+        relativePosition = nil
         move(to: p)
     }
 
+    /// Where our own relative moves have put the pointer, and when the last one was posted.
+    private var relativePosition: CGPoint?
+    private var lastRelativePost: TimeInterval = 0
+
+    /// A posted move takes a moment to be applied, so reading the pointer position straight afterwards
+    /// returns where it was before. Packets that arrive back to back (every burst after a Wi-Fi stall) then
+    /// all start from the same stale point and most of the distance is lost: 20 moves of 2 pt posted in a
+    /// row moved the pointer 4 pt, not 40 (measured 2026-11-05). So while moves keep coming, carry on from
+    /// the position we last asked for, and only read the real one again after a pause.
     func moveRelative(dx: CGFloat, dy: CGFloat) {
-        let c = currentLocation()
-        move(to: CGPoint(x: c.x + dx, y: c.y + dy))
+        let now = ProcessInfo.processInfo.systemUptime
+        var base = currentLocation()
+        if let last = relativePosition, now - lastRelativePost < 0.05 { base = last }
+        let p = clampedToDisplays(CGPoint(x: base.x + dx, y: base.y + dy), from: base)
+        relativePosition = p
+        lastRelativePost = now
+        move(to: p)
+    }
+
+    /// Keeps the position on a display. Without this, pushing against a screen edge would run the
+    /// remembered position off the screen, and the pointer would stay stuck until the finger came back as far.
+    private func clampedToDisplays(_ p: CGPoint, from base: CGPoint) -> CGPoint {
+        var count: UInt32 = 0
+        var ids = [CGDirectDisplayID](repeating: 0, count: 1)
+        if CGGetDisplaysWithPoint(p, 1, &ids, &count) == .success, count > 0 { return p }
+        var bounds = CGDisplayBounds(CGMainDisplayID())
+        if CGGetDisplaysWithPoint(base, 1, &ids, &count) == .success, count > 0 { bounds = CGDisplayBounds(ids[0]) }
+        return CGPoint(x: min(max(p.x, bounds.minX), bounds.maxX - 1),
+                       y: min(max(p.y, bounds.minY), bounds.maxY - 1))
     }
 
     /// While a button is held the system expects *Dragged events, not mouseMoved,
@@ -66,7 +93,10 @@ final class Injector {
 
     // MARK: Buttons
 
-    func button(_ b: UInt8, down: Bool) {
+    /// `singleClick` forces a click count of 1, so a press that follows a tap (double-tap-and-hold to drag)
+    /// starts a plain drag instead of macOS reading it as the second half of a double-click.
+    func button(_ b: UInt8, down: Bool, singleClick: Bool = false) {
+        if singleClick { lastClickTime[b] = nil }
         if !down, let since = buttonDownTime[b] {
             let held = ProcessInfo.processInfo.systemUptime - since
             if held < minimumPress {
@@ -109,6 +139,23 @@ final class Injector {
         guard let e = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: p,
                               mouseButton: CGMouseButton(rawValue: UInt32(b)) ?? .left) else { return }
         e.setIntegerValueField(.mouseEventClickState, value: clickCount[b] ?? 1)
+        e.post(tap: .cghidEventTap)
+    }
+
+    // MARK: Magnify
+
+    /// A trackpad pinch, as the trackpad driver sends it: a gesture event (type 29) of HID type 8 (zoom) with
+    /// the change in magnification in field 113 and the phase in field 132. There is no public API for this;
+    /// AppKit reads these as NSEvent.magnify (checked on macOS 27), which is what Preview, Photos, Maps and
+    /// Safari zoom on.
+    func magnify(by delta: Double, phase: UInt8) {
+        guard let e = CGEvent(source: source) else { return }
+        e.type = CGEventType(rawValue: 29)!
+        e.location = currentLocation()
+        e.setIntegerValueField(CGEventField(rawValue: 110)!, value: 8)
+        e.setDoubleValueField(CGEventField(rawValue: 113)!, value: delta)
+        let gesturePhase: Int64 = phase == 1 ? 1 : phase == 3 ? 4 : 2      // began, ended, changed
+        e.setIntegerValueField(CGEventField(rawValue: 132)!, value: gesturePhase)
         e.post(tap: .cghidEventTap)
     }
 

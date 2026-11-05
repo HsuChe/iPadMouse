@@ -10,12 +10,14 @@
 		11CA919213D6F23EE057A61D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 906456379EA2F5CCD28A3024 /* Assets.xcassets */; };
 		1C639F4ADCBA3B699FBC461D /* TrainingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC3507D0426D43EDBF48A317 /* TrainingView.swift */; };
 		1CC2D7C9AF39A6978ACCD903 /* Injector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B547DAE935C6FCD5926398F /* Injector.swift */; };
+		1E5796BB32FC6175B3CB7B55 /* BluetoothLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 572FD55A9552F2A18DE4FC71 /* BluetoothLink.swift */; };
 		2F37FCC6B2334650199E4874 /* TouchpadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76816A4D8439AD3C1F032366 /* TouchpadView.swift */; };
 		35C24348A3D7CE09455C4B19 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B7593BF5F22370BDAB3325F /* AppDelegate.swift */; };
 		36572C76E949C21398855849 /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB135774DD64B47C7B7DCE8 /* Protocol.swift */; };
 		596BDFD14E56F0638D4276AD /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1861251E38EAC5E596480A /* SceneDelegate.swift */; };
 		5BB9FD45FAF062DEFA292462 /* Receiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC3E38A2FE23A6C7394879D7 /* Receiver.swift */; };
 		6EAE3F92561A70AC6AC09DAF /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB135774DD64B47C7B7DCE8 /* Protocol.swift */; };
+		6FA7BAFFA0EE937E7BC7D0F5 /* BluetoothListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE586B6128E1EAE3466F2115 /* BluetoothListener.swift */; };
 		760A7455452457BC4E48C4FA /* Link.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3E2D8DB5B9EA8D473FDFC58 /* Link.swift */; };
 		7EDCAAF4FAFC9EDC7F037299 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDB34486D625648CB6C1C7F4 /* AppDelegate.swift */; };
 		A0EF18962DBC6B5F0036F40E /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F42628B0A2384349E06E8CF /* main.swift */; };
@@ -28,11 +30,13 @@
 		3B00B4338C24BDCD3EB888DE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		4B7593BF5F22370BDAB3325F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		4F42628B0A2384349E06E8CF /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		572FD55A9552F2A18DE4FC71 /* BluetoothLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothLink.swift; sourceTree = "<group>"; };
 		5ABC2704BF6AA5B7C1EA1E77 /* iPadMouseMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iPadMouseMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		76816A4D8439AD3C1F032366 /* TouchpadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchpadView.swift; sourceTree = "<group>"; };
 		906456379EA2F5CCD28A3024 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9B547DAE935C6FCD5926398F /* Injector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Injector.swift; sourceTree = "<group>"; };
 		AE1861251E38EAC5E596480A /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		AE586B6128E1EAE3466F2115 /* BluetoothListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothListener.swift; sourceTree = "<group>"; };
 		AF995D8B88FC1BFB3C8D9B3A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		BC3507D0426D43EDBF48A317 /* TrainingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainingView.swift; sourceTree = "<group>"; };
 		BDB34486D625648CB6C1C7F4 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -66,6 +70,7 @@
 			isa = PBXGroup;
 			children = (
 				4B7593BF5F22370BDAB3325F /* AppDelegate.swift */,
+				AE586B6128E1EAE3466F2115 /* BluetoothListener.swift */,
 				AF995D8B88FC1BFB3C8D9B3A /* Info.plist */,
 				9B547DAE935C6FCD5926398F /* Injector.swift */,
 				4F42628B0A2384349E06E8CF /* main.swift */,
@@ -87,6 +92,7 @@
 			isa = PBXGroup;
 			children = (
 				BDB34486D625648CB6C1C7F4 /* AppDelegate.swift */,
+				572FD55A9552F2A18DE4FC71 /* BluetoothLink.swift */,
 				3B00B4338C24BDCD3EB888DE /* Info.plist */,
 				C3E2D8DB5B9EA8D473FDFC58 /* Link.swift */,
 				AE1861251E38EAC5E596480A /* SceneDelegate.swift */,
@@ -105,6 +111,7 @@
 			buildConfigurationList = 899F9C6228DBD380599CC4F4 /* Build configuration list for PBXNativeTarget "iPadMouse" */;
 			buildPhases = (
 				34F53ADF3AD5D3C69F587A63 /* Sources */,
+				60FD52A4E2D221BE6FA7B3E8 /* Embed the Mac app */,
 				23EE452D8A1A7987FD629B64 /* Resources */,
 			);
 			buildRules = (
@@ -194,12 +201,35 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		60FD52A4E2D221BE6FA7B3E8 /* Embed the Mac app */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed the Mac app";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "ZIP=\"$SRCROOT/dist/iPad-Mouse-for-Mac.zip\"\nif [ -f \"$ZIP\" ]; then\n  cp \"$ZIP\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/\"\nelse\n  echo \"warning: dist/iPad-Mouse-for-Mac.zip not found; run tools/embed-mac-app.sh to include the Mac app\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		2F946F33888E6A381D17435D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				35C24348A3D7CE09455C4B19 /* AppDelegate.swift in Sources */,
+				6FA7BAFFA0EE937E7BC7D0F5 /* BluetoothListener.swift in Sources */,
 				1CC2D7C9AF39A6978ACCD903 /* Injector.swift in Sources */,
 				36572C76E949C21398855849 /* Protocol.swift in Sources */,
 				5BB9FD45FAF062DEFA292462 /* Receiver.swift in Sources */,
@@ -212,6 +242,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				7EDCAAF4FAFC9EDC7F037299 /* AppDelegate.swift in Sources */,
+				1E5796BB32FC6175B3CB7B55 /* BluetoothLink.swift in Sources */,
 				760A7455452457BC4E48C4FA /* Link.swift in Sources */,
 				6EAE3F92561A70AC6AC09DAF /* Protocol.swift in Sources */,
 				596BDFD14E56F0638D4276AD /* SceneDelegate.swift in Sources */,
