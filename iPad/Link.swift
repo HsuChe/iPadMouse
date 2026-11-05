@@ -13,6 +13,8 @@ final class Link {
     /// Names of Macs currently visible on the network (main-thread safe copy via onMacsChanged).
     var onMacsChanged: (([String]) -> Void)?
     private(set) var availableMacs: [String] = []
+    private var bonjourMacs: [String] = []
+    private var bluetoothMacs: [String] = []
 
     /// Stable per-install identity the Mac approves once.
     private let token: [UInt8] = {
@@ -44,7 +46,33 @@ final class Link {
         }
     }
 
+    /// When on, packets go over Bluetooth whenever that link is up and no USB cable is attached; Wi-Fi is
+    /// then only the fallback. Off by default: turning it on makes iPadOS ask for Bluetooth permission.
+    var useBluetooth = UserDefaults.standard.bool(forKey: "useBluetooth") {
+        didSet {
+            UserDefaults.standard.set(useBluetooth, forKey: "useBluetooth")
+            queue.async {
+                if self.useBluetooth {
+                    self.startBluetooth()
+                } else {
+                    self.bluetooth.stop()
+                    self.bluetoothReplied = false
+                    self.report("Bluetooth off")
+                }
+            }
+        }
+    }
+
+    /// Which link the next packet will travel over, for the HUD.
+    var carrier: String {
+        if directConnection != nil { return "USB" }
+        if bluetooth.ready { return "Bluetooth" }
+        return connection == nil ? "none" : "Wi-Fi"
+    }
+
     private let queue = DispatchQueue(label: "ipadmouse.link", qos: .userInteractive)
+    private lazy var bluetooth = BluetoothLink(queue: queue)
+    private var bluetoothReplied = false
     private var browser: NWBrowser?
     private var connection: NWConnection?
     private var endpoint: NWEndpoint?
@@ -56,8 +84,10 @@ final class Link {
     private var triedDirectHosts = Set<String>()
 
     func start() {
+        // No peer-to-peer (AWDL): while it is in use the Wi-Fi radio leaves the network's channel for about
+        // 160 ms in every 524 ms, and every packet sent in that window waits. The Mac log showed all of a
+        // session's "LINK delayed it" pauses locked to that 524 ms cycle (2026-11-05).
         let params = NWParameters()
-        params.includePeerToPeer = true
         let browser = NWBrowser(for: .bonjour(type: Packet.serviceType, domain: nil), using: params)
         browser.stateUpdateHandler = { [weak self] state in
             if case .failed(let error) = state {
@@ -78,10 +108,72 @@ final class Link {
         browser.start(queue: queue)
         self.browser = browser
         report("Searching for the Mac…")
+        if useBluetooth { queue.async { self.startBluetooth() } }
     }
 
     func send(_ packet: Packet) {
-        (directConnection ?? connection)?.send(content: packet.encoded(), completion: .idempotent)
+        transmit(packet.encoded())
+    }
+
+    /// A diagnostic line that lands in the Mac's log (~/Library/Logs/iPadMouse.log).
+    func note(_ text: String) {
+        transmit(Packet.note(text))
+    }
+
+    /// USB first, then Bluetooth if it is switched on and connected, then Wi-Fi.
+    private func transmit(_ data: Data) {
+        if let direct = directConnection {
+            direct.send(content: data, completion: .idempotent)
+        } else if bluetooth.ready {
+            bluetooth.send(data)
+        } else {
+            connection?.send(content: data, completion: .idempotent)
+        }
+    }
+
+    // MARK: Bluetooth
+
+    /// Call on the link queue.
+    private func startBluetooth() {
+        bluetooth.onStatus = { [weak self] text in self?.report(text) }
+        bluetooth.hello = { [weak self] in
+            guard let self else { return [] }
+            return [Packet.name(self.deviceName), Packet.hello(token: self.token)]
+        }
+        bluetooth.onMacsChanged = { [weak self] macs in
+            self?.bluetoothMacs = macs
+            self?.publishMacs()
+        }
+        bluetooth.onData = { [weak self] data in
+            guard let self, let packet = Packet(data: data) else { return }
+            switch packet.kind {
+            case .pairPending:
+                self.report("Waiting for approval on the Mac… (check the Mac's screen)")
+            case .pairDenied:
+                self.report("The Mac denied this iPad. Use “Forget Paired iPads” on the Mac to retry.")
+            case .config:
+                if !self.bluetoothReplied {
+                    self.bluetoothReplied = true
+                    self.report("Connected via Bluetooth")
+                }
+                self.onConfig?(CGSize(width: CGFloat(packet.x), height: CGFloat(packet.y)))
+            default:
+                break
+            }
+        }
+        bluetoothReplied = false
+        bluetooth.wantedMac = preferredMac
+        bluetooth.start()
+    }
+
+    /// The Macs list is everything seen over Bonjour plus any Mac seen only over Bluetooth.
+    private func publishMacs() {
+        let extra = bluetoothMacs.filter { b in !bonjourMacs.contains { BluetoothLink.sameMac($0, b) } }
+        let macs = (bonjourMacs + extra).sorted()
+        if macs != availableMacs {
+            availableMacs = macs
+            onMacsChanged?(macs)
+        }
     }
 
     /// Hello (with our token) preceded by our name, on a specific connection.
@@ -96,9 +188,14 @@ final class Link {
         UserDefaults.standard.set(name, forKey: "preferredMac")
         queue.async {
             self.dropConnection(retry: false)
+            if self.useBluetooth {
+                // Start the Bluetooth side over as well, so it follows the choice.
+                self.bluetooth.stop()
+                self.startBluetooth()
+            }
             if let r = self.results.first(where: { self.name(of: $0.endpoint) == name }) {
                 self.connect(to: r.endpoint)
-            } else {
+            } else if !self.bluetoothMacs.contains(where: { BluetoothLink.sameMac($0, name) }) {
                 self.report("\(name) is not visible right now")
             }
         }
@@ -112,11 +209,8 @@ final class Link {
 
     private func connectIfNeeded(_ results: Set<NWBrowser.Result>) {
         self.results = results
-        let macs = results.map { name(of: $0.endpoint) }.sorted()
-        if macs != availableMacs {
-            availableMacs = macs
-            onMacsChanged?(macs)
-        }
+        bonjourMacs = results.map { name(of: $0.endpoint) }.sorted()
+        publishMacs()
         guard connection == nil else { return }
         if let preferred = preferredMac, let r = results.first(where: { name(of: $0.endpoint) == preferred }) {
             connect(to: r.endpoint)
@@ -132,7 +226,6 @@ final class Link {
     private func connect(to endpoint: NWEndpoint) {
         self.endpoint = endpoint
         let params = NWParameters.udp
-        params.includePeerToPeer = true
         // Bonjour discovery stays on Wi-Fi; "Prefer USB" switches to a direct address once the Mac sends one.
         let connection = NWConnection(to: endpoint, using: params)
         lastReply = Date()

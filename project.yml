@@ -25,6 +25,18 @@ targets:
         TARGETED_DEVICE_FAMILY: "2"
         SUPPORTS_MACCATALYST: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    # Carries the Mac app inside the iPad app so it can be AirDropped to a Mac that doesn't have it yet.
+    # tools/embed-mac-app.sh builds the zip; without it the iPad app shares the download page instead.
+    postCompileScripts:
+      - name: Embed the Mac app
+        basedOnDependencyAnalysis: false
+        script: |
+          ZIP="$SRCROOT/dist/iPad-Mouse-for-Mac.zip"
+          if [ -f "$ZIP" ]; then
+            cp "$ZIP" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/"
+          else
+            echo "warning: dist/iPad-Mouse-for-Mac.zip not found; run tools/embed-mac-app.sh to include the Mac app"
+          fi
     info:
       path: iPad/Info.plist
       properties:
@@ -46,6 +58,7 @@ targets:
               - UISceneConfigurationName: Default
                 UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).SceneDelegate
         NSLocalNetworkUsageDescription: iPad Mouse looks for the companion app on your Mac over Wi-Fi or USB.
+        NSBluetoothAlwaysUsageDescription: iPad Mouse can send pointer movement to your Mac over Bluetooth.
         NSBonjourServices:
           - _ipadmouse._udp
   iPadMouseMac:
@@ -69,5 +82,6 @@ targets:
         NSPrincipalClass: NSApplication
         LSMinimumSystemVersion: "14.0"
         NSLocalNetworkUsageDescription: iPad Mouse advertises itself to your iPad over Wi-Fi or USB.
+        NSBluetoothAlwaysUsageDescription: iPad Mouse can receive pointer movement from your iPad over Bluetooth.
         NSBonjourServices:
           - _ipadmouse._udp

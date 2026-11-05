@@ -32,20 +32,22 @@ Two modes, switched with the **Mode** button on the iPad and remembered between 
 | Input | Result on the Mac |
 |---|---|
 | Pencil hovering (M2 iPad Pro or newer) | Pointer follows, hover effects work |
-| Pencil touch | Left click; keep it down to drag |
+| Pencil tip tap | Left click where the tip touched. Two quick taps are a double-click |
+| Pencil press and drag | Scroll the page under the pointer (the pointer stays put) |
+| Pencil double-tap, then drag | Drag and drop or select: the button is held from the moment the tip moves until it lifts |
 | Pencil double-tap (barrel) | Right click. Turn it off in Settings > Apple Pencil > Double-tap if a firm grip sets it off |
 | Pencil Pro squeeze | Back (mouse button 4) |
-| Quick hard stab with the Pencil | Back (mouse button 4) |
 | One finger tap | Left click at the pointer. Only counts if no other finger touched during the tap |
 | One finger drag | Move the pointer like a trackpad, with Mac-style acceleration (slow = precise, fast = far). **Tracking** 1-10 and **Acceleration** on/off are buttons on the pad |
 | Two finger drag | Scroll with momentum |
+| Tap, then put the finger straight back down (within 0.35 s), hold and move | Drag and drop: the button stays held until you lift. Starts as a fresh single press, so it never turns into a double-click |
 | Two finger tap | Right click. Only counts if exactly two fingers touched and they landed within 80 ms of each other, so a resting thumb or the fingers of a swipe never right-click |
 | The Pencil, while hovering, going round in compact circles (within about 1 s, no wider than about 4 cm) | Scroll wheel: clockwise scrolls up, counterclockwise scrolls down (sent as finger travel, so it follows the Mac's natural-scrolling setting). The pointer holds still while the wheel turns; stop circling to get it back. The one-finger version is off: ordinary glides kept triggering it |
 | Three finger swipe left/right/up/down | Next/previous Space, Mission Control, App Exposé |
 | Three finger tap | Look up (Ctrl-Cmd-D) |
 | Four fingers spread apart / pinch together | Show Desktop / Launchpad (the Apps view on macOS 26) |
 | Pencil Pro squeeze while hovering, then move the Pencil left/right before letting go | Next/previous Space (the pointer holds still during the squeeze, and Back is not sent) |
-| Pinch | Cmd + / Cmd - |
+| Pinch | Zoom, like a trackpad pinch: smooth magnify in images, maps, PDFs and web pages (nothing elsewhere). The fingers must spread or close by 10% first, so scrolling never zooms |
 
 ### League mode
 
@@ -110,10 +112,11 @@ and game-aware drills fed by League's local Live Client Data API.
 
 | Input | Result |
 |---|---|
-| Palm or side of the hand on the glass | Ignored: it never clicks, scrolls or counts as a finger. Contacts of 40 pt or more are palms; the HUD shows the largest contact of the last touch |
-| Pencil hovering or touching | The Pencil owns the pad: every finger and palm touch is ignored, and fingers already down are dropped until they lift. Fingers get the pad back 0.3 s after the Pencil leaves. The HUD's `input:` line shows who has it |
+| Palm or side of the hand on the glass | Ignored: it never clicks, scrolls or counts as a finger. Contacts of 95 pt or more are palms (measured: fingers 48-72, palms 109-157). A palm can't click or move the pointer, but it never blocks a two-finger scroll; the HUD shows the largest contact of the last touch |
+| Pencil hovering or touching | The Pencil owns the pad: finger glides, scrolls and swipes are ignored (a quick fingertip tap still clicks while it only hovers), and fingers already down are dropped until they lift. Fingers get the pad back 0.3 s after the Pencil leaves. The HUD's `input:` line shows who has it |
 | "Dim screen" button | Backlight to zero; the restore button stays in the top right |
 | "Prefer USB" button | Uses the direct USB link whenever the cable is attached (Wi-Fi otherwise). On by default and remembered, because Wi-Fi delivery jitters by 100-150 ms and makes the pointer stutter |
+| "Bluetooth" button | Sends over Bluetooth LE instead of Wi-Fi when no cable is attached. Off by default; the first use asks for Bluetooth permission. Steadier than a stalling Wi-Fi link but slower: data moves every 30 ms, so expect up to about 45 ms of delay. The HUD's `link:` line shows which link is in use |
 | "Lock iPad" button | Hides every iPad-side control so touches only drive the Mac. Hold "Unlock" for 1 second to get them back. To also block iPadOS swipes (Home, Control Center, app switcher, notifications), triple-click the top button to start Guided Access; turn it on once in Settings > Accessibility > Guided Access. Starting Guided Access also locks the app |
 
 ### Connecting and pairing
@@ -125,6 +128,17 @@ Allow. Approved iPads are remembered. **Forget Paired iPads** in the Mac menu re
 
 **Prefer USB** on the iPad switches to a direct link over the USB cable once the Mac has told the
 iPad its address; the status line reads "Connected via USB (direct)".
+
+**Bluetooth** on the iPad connects to the Mac app over Bluetooth LE. Nothing is paired in Settings and
+no device appears in either Bluetooth list: the Mac app advertises a service and the iPad app connects
+to it. Macs seen only over Bluetooth also appear under **Macs**. Packets go over USB if a cable is
+attached, otherwise Bluetooth if it is on and connected, otherwise Wi-Fi.
+
+**A Mac that doesn't have the Mac app yet** can't be listed. Tap **Macs > Send the Mac app to another
+Mac…** to AirDrop it there from the iPad. Someone at that Mac has to accept it, open it (System
+Settings > Privacy & Security > Open Anyway, since it isn't notarized), grant Accessibility and approve
+the iPad. The copy sent is built by `tools/embed-mac-app.sh`; run that before building the iPad app
+whenever the Mac code or `Shared/Protocol.swift` changes.
 
 The mapped area is letterboxed to the Mac display's aspect ratio and drawn as a faint outline.
 
@@ -212,6 +226,13 @@ Console.app with the iPad selected in the sidebar.
 - Toggle "Prefer USB" off on the iPad if it is on and you are not wired.
 - iPad Settings > Privacy & Security > Local Network > iPad Mouse must be on.
 
+### If the pointer stutters over Wi-Fi
+While peer-to-peer Wi-Fi (AWDL: AirDrop, Universal Control, Sidecar, AirPlay) is in use, the Mac's
+radio leaves the network's channel for about 160 ms in every 524 ms and packets wait. The Mac log
+(`~/Library/Logs/iPadMouse.log`) shows it as "LINK delayed it" pauses of about 160 ms, and
+`ping -i 0.1 <router>` shows every fifth reply late. Use the USB cable or the Bluetooth button, or
+find and turn off the feature holding peer-to-peer Wi-Fi on.
+
 ### About USB
 Bonjour runs over every interface, so if macOS exposes the iPad as a network interface
 (System Settings > Network, an "iPad" entry), the app uses that link automatically and the HUD
@@ -282,6 +303,9 @@ On the Mac, the menu has *Natural Scrolling*. If two-finger scrolling feels inve
 ## Known gaps
 - Pencil hover needs an M2 iPad Pro or newer. On older iPads the finger trackpad still works and
   the Pencil moves the pointer only while touching.
-- Pinch sends Cmd +/- rather than a true trackpad magnify gesture (macOS has no public API for that).
+- With a free Apple account the iPad app stops opening 7 days after each build and has to be
+  reinstalled from the Mac.
+- The pointer sometimes turns invisible on the Mac while the iPad moves it, until a switch to another
+  Space. Cause unknown; the Mac log records "pointer INVISIBLE" with the frontmost app when it happens.
 - No app icon yet. Xcode warns but runs fine; add an `Assets.xcassets` with an AppIcon set when you ship.
 - The `Prefer USB` toggle relies on the USB link being reported as wired Ethernet by iPadOS.

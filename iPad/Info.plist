@@ -20,6 +20,8 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>iPad Mouse can send pointer movement to your Mac over Bluetooth.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_ipadmouse._udp</string>

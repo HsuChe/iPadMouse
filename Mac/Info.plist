@@ -22,6 +22,8 @@
 	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>iPad Mouse can receive pointer movement from your iPad over Bluetooth.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_ipadmouse._udp</string>
