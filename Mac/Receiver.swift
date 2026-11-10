@@ -216,6 +216,76 @@ final class Receiver {
         }
     }
 
+    /// Which Space each display is showing, for checking that a swipe really switched Space.
+    private struct SpaceState {
+        var ids: [Int]
+        var text: String            // "Space 3 of 4", one per display
+    }
+
+    /// Nil if macOS no longer offers the (private) call.
+    private static func currentSpaces() -> SpaceState? {
+        typealias Connection = @convention(c) () -> Int32
+        typealias CopySpaces = @convention(c) (Int32) -> Unmanaged<CFArray>?
+        guard let sky = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_NOW),
+              let connection = dlsym(sky, "CGSMainConnectionID"),
+              let copy = dlsym(sky, "CGSCopyManagedDisplaySpaces") else { return nil }
+        let id = unsafeBitCast(connection, to: Connection.self)()
+        guard let displays = unsafeBitCast(copy, to: CopySpaces.self)(id)?.takeRetainedValue() as? [[String: Any]] else { return nil }
+        var state = SpaceState(ids: [], text: "")
+        var parts: [String] = []
+        for display in displays {
+            let current = (display["Current Space"] as? [String: Any])?["ManagedSpaceID"] as? Int ?? -1
+            let all = (display["Spaces"] as? [[String: Any]] ?? []).map { $0["ManagedSpaceID"] as? Int ?? -1 }
+            state.ids.append(current)
+            parts.append("Space \((all.firstIndex(of: current) ?? -1) + 1) of \(all.count)")
+        }
+        state.text = parts.joined(separator: ", ")
+        return state
+    }
+
+    // A swipe on the iPad that "does nothing" either never arrived or was ignored by macOS. The key line in the
+    // log covers the first; this covers the second. macOS reports the new Space only once the slide has
+    // finished, so the check waits for the swipes to stop and then compares with where they started.
+    private var spaceSwipeStart: SpaceState?
+    private var spaceSwipeKeys = 0
+    private var spaceSwipeNet = 0
+    private var spaceSwipeGeneration = 0
+    private let spaceSwipeSettle: TimeInterval = 1.5
+
+    private func noteSpaceKey(next: Bool) {
+        if spaceSwipeStart == nil {
+            guard let now = Self.currentSpaces() else { return }
+            spaceSwipeStart = now
+            spaceSwipeKeys = 0
+            spaceSwipeNet = 0
+        }
+        spaceSwipeKeys += 1
+        spaceSwipeNet += next ? 1 : -1
+        spaceSwipeGeneration += 1
+        let generation = spaceSwipeGeneration
+        queue.asyncAfter(deadline: .now() + spaceSwipeSettle) { [weak self] in
+            guard let self, generation == self.spaceSwipeGeneration else { return }
+            self.reportSpaceSwitch()
+        }
+    }
+
+    private func reportSpaceSwitch() {
+        guard let before = spaceSwipeStart, let after = Self.currentSpaces() else { return }
+        let keys = "\(spaceSwipeKeys) swipe key\(spaceSwipeKeys == 1 ? "" : "s"), net \(abs(spaceSwipeNet)) \(spaceSwipeNet >= 0 ? "next" : "previous")"
+        spaceSwipeStart = nil
+        if after.ids != before.ids {
+            log("Space changed: \(before.text) -> \(after.text) (\(keys))")
+            return
+        }
+        let pointerHidden = Self.cursorIsVisible.map { $0() == 0 } ?? false
+        DispatchQueue.main.async {
+            let front = NSWorkspace.shared.frontmostApplication?.localizedName ?? "unknown"
+            self.queue.async {
+                self.log("Space did NOT change (still \(after.text)) after \(keys); frontmost app: \(front); pointer \(pointerHidden ? "hidden" : "visible")")
+            }
+        }
+    }
+
     private func logRelativeWindow(until end: TimeInterval) {
         log(String(format: "finger moves: %.0f/s over %.1f s, delivery spread %.0f ms",
                    Double(relativeCount) / max(end - relativeWindow, 0.001), end - relativeWindow,
@@ -456,6 +526,10 @@ final class Receiver {
             }
         case .key:
             log("key \(p.button) mods \(p.flags)")
+            // Ctrl-Left / Ctrl-Right ask for another Space: note where we are, to check that it worked.
+            let isSpaceKey = (p.button == KeyCode.leftArrow || p.button == KeyCode.rightArrow)
+                && p.flags == KeyModifiers.control.rawValue
+            if isSpaceKey { noteSpaceKey(next: p.button == KeyCode.rightArrow) }
             injector.key(code: UInt16(p.button), modifiers: KeyModifiers(rawValue: p.flags))
         }
     }

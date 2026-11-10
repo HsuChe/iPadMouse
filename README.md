@@ -43,7 +43,7 @@ Two modes, switched with the **Mode** button on the iPad and remembered between 
 | Tap, then put the finger straight back down (within 0.35 s), hold and move | Drag and drop: the button stays held until you lift. Starts as a fresh single press, so it never turns into a double-click |
 | Two finger tap | Right click. Only counts if exactly two fingers touched and they landed within 80 ms of each other, so a resting thumb or the fingers of a swipe never right-click |
 | The Pencil, while hovering, going round in compact circles (within about 1 s, no wider than about 4 cm) | Scroll wheel: clockwise scrolls up, counterclockwise scrolls down (sent as finger travel, so it follows the Mac's natural-scrolling setting). The pointer holds still while the wheel turns; stop circling to get it back. The one-finger version is off: ordinary glides kept triggering it |
-| Three finger swipe left/right/up/down | Next/previous Space, Mission Control, App Exposé |
+| Three or four finger swipe left/right/up/down | Next/previous Space, Mission Control, App Exposé |
 | Three finger tap | Look up (Ctrl-Cmd-D) |
 | Four fingers spread apart / pinch together | Show Desktop / Launchpad (the Apps view on macOS 26) |
 | Pencil Pro squeeze while hovering, then move the Pencil left/right before letting go | Next/previous Space (the pointer holds still during the squeeze, and Back is not sent) |
