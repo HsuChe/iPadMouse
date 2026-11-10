@@ -87,14 +87,16 @@ final class TouchpadViewController: UIViewController {
     private let pressGrowthFactor: CGFloat = 1.35
     private let pressGrowthMinimum: CGFloat = 3
     /// Squeeze + hover swipe: horizontal Pencil travel (points, while hovering) that counts as a swipe.
-    /// 80 missed real flicks; a flick also tends to carry the Pencil out of hover range before it is done.
-    private let squeezeSwipeDistance: CGFloat = 50
+    /// 80 and then 50 missed real flicks; a flick also tends to carry the Pencil out of hover range before it is done.
+    private let squeezeSwipeDistance: CGFloat = 35
     /// Tap, then touch down again within this long and move: drag with the left button held (Mac "tap and drag").
     private let tapDragWindow: TimeInterval = 0.35
     /// Double-tap-and-hold drags. The press is tagged so the Mac starts a plain drag, not a double-click.
     private let tapToDrag = true
     /// Four fingers spreading apart by this factor shows the desktop; pinching in to the inverse opens Launchpad.
     private let fourFingerSpreadFactor: CGFloat = 1.4
+    /// Past this much opening or closing, four fingers are on their way to a spread or pinch and no longer swipe.
+    private let fourFingerReshapeFactor: CGFloat = 1.2
     /// Pointer acceleration, modelled on the Mac trackpad: slow movements are damped for precision, fast ones
     /// are amplified. These are the gain multipliers at rest and at full speed, and the speed (points per
     /// second on the iPad) at which the curve reaches the top. "Tracking" scales the whole curve.
@@ -170,6 +172,8 @@ final class TouchpadViewController: UIViewController {
     private var squeezeStartX: CGFloat = 0
     /// The squeeze began out of hover range: take the start point from the first hover sample instead.
     private var squeezeStartPending = false
+    /// Furthest the Pencil got sideways during this squeeze, to say why a squeeze ended as "back".
+    private var squeezeMaxTravel: CGFloat = 0
 
     // Desktop raw-touch bookkeeping: tap-and-drag, four-finger pinch/spread
     private var lastOneFingerTap: TimeInterval = -1000
@@ -177,13 +181,13 @@ final class TouchpadViewController: UIViewController {
     private var tapDragging = false
     private var desktopActive = Set<UITouch>()
     private var onePan: UIPanGestureRecognizer!
-    // Three-finger swipe (Spaces, Mission Control, App Exposé)
-    private var threeFingerActive = false
-    private var threeFingerFired = false
-    private var threeFingerStart = CGPoint.zero
-    /// Centroid travel (points) that makes three fingers a swipe, and how much the main axis must dominate.
-    private let threeFingerSwipeDistance: CGFloat = 70
-    private let threeFingerAxisDominance: CGFloat = 1.3
+    // Three- or four-finger swipe (Spaces, Mission Control, App Exposé)
+    private var multiSwipeActive = false
+    private var multiSwipeFired = false
+    private var multiSwipeStart = CGPoint.zero
+    /// Centroid travel (points) that makes three or four fingers a swipe, and how much the main axis must dominate.
+    private let multiSwipeDistance: CGFloat = 70
+    private let multiSwipeAxisDominance: CGFloat = 1.3
     private var fourFingerStartSpread: CGFloat = 0
     private var fourFingerFired = false
     /// Last gesture the pad recognised, shown on the HUD so a gesture that "does nothing" can be diagnosed.
@@ -493,7 +497,7 @@ final class TouchpadViewController: UIViewController {
         // League relies on that cancellation to tell a two-finger drag from a two-finger tap.
         pad.panGestureRecognizer.cancelsTouchesInView = !desktop
         desktopActive.removeAll()
-        threeFingerActive = false
+        multiSwipeActive = false
         leagueActive.removeAll()
         leaguePoints.removeAll()
         trainer.isHidden = mode != .training
@@ -894,7 +898,7 @@ final class TouchpadViewController: UIViewController {
                 // Nothing is on the glass, so no gesture can still be in progress. Starting clean means a
                 // lost lift-off can never leave the pad believing three fingers are still down.
                 desktopActive.removeAll()
-                threeFingerActive = false
+                multiSwipeActive = false
                 fourFingerStartSpread = 0
                 leagueActive.removeAll()
                 leaguePoints.removeAll()
@@ -975,7 +979,7 @@ final class TouchpadViewController: UIViewController {
             link.send(Packet(kind: .buttonUp, button: MouseButton.left.rawValue))
         }
         desktopActive.removeAll()
-        threeFingerActive = false
+        multiSwipeActive = false
         fourFingerStartSpread = 0
         leagueActive.removeAll()
         leaguePoints.removeAll()
@@ -1096,68 +1100,90 @@ final class TouchpadViewController: UIViewController {
         case .began:
             if desktopActive.isEmpty {
                 lastFingerDown = CACurrentMediaTime()
-                threeFingerActive = false
-                threeFingerFired = false
+                multiSwipeActive = false
+                multiSwipeFired = false
             }
             desktopActive.formUnion(touches)
-            if desktopActive.count == 3, !threeFingerActive { beginThreeFinger() }
+            if desktopActive.count == 3 || desktopActive.count == 4 {
+                if !multiSwipeActive {
+                    beginMultiSwipe()
+                } else if !multiSwipeFired {
+                    // Another finger shifts the centroid: measure the swipe from where it is now.
+                    multiSwipeStart = centroid(desktopActive.map { $0.location(in: view) })
+                    lastGesture = "\(desktopActive.count) fingers down"
+                }
+            }
             if desktopActive.count == 4 {
                 fourFingerStartSpread = spread(of: desktopActive)
                 fourFingerFired = false
             }
         case .moved:
-            if threeFingerActive, desktopActive.count == 3 { trackThreeFinger() }
-            guard desktopActive.count == 4, !fourFingerFired, fourFingerStartSpread > 0 else { return }
-            let ratio = spread(of: desktopActive) / fourFingerStartSpread
-            if ratio >= fourFingerSpreadFactor {
-                fourFingerFired = true
-                lastGesture = "4-finger spread: show desktop"
-                key(KeyCode.f11, [])
-            } else if ratio <= 1 / fourFingerSpreadFactor {
-                fourFingerFired = true
-                lastGesture = "4-finger pinch: Launchpad"
-                key(KeyCode.f4, [])
+            // Four fingers closing or opening are a pinch/spread under way, not a swipe.
+            var reshaping = false
+            if desktopActive.count == 4, fourFingerStartSpread > 0 {
+                let ratio = spread(of: desktopActive) / fourFingerStartSpread
+                reshaping = ratio >= fourFingerReshapeFactor || ratio <= 1 / fourFingerReshapeFactor
+                // One gesture per touch: a swipe that fired rules out the pinch/spread, and the other way round.
+                if !fourFingerFired, !multiSwipeFired {
+                    if ratio >= fourFingerSpreadFactor {
+                        fourFingerFired = true
+                        multiSwipeFired = true
+                        lastGesture = "4-finger spread: show desktop"
+                        key(KeyCode.f11, [])
+                    } else if ratio <= 1 / fourFingerSpreadFactor {
+                        fourFingerFired = true
+                        multiSwipeFired = true
+                        lastGesture = "4-finger pinch: Launchpad"
+                        key(KeyCode.f4, [])
+                    }
+                }
             }
+            if multiSwipeActive, !reshaping, desktopActive.count == 3 || desktopActive.count == 4 { trackMultiSwipe() }
         case .ended, .cancelled:
             desktopActive.subtract(touches)
             if desktopActive.isEmpty { fourFingerStartSpread = 0 }
+            // A finger lifting shifts the centroid too; without this the lift itself could read as a swipe.
+            if multiSwipeActive, !multiSwipeFired, desktopActive.count >= 3 {
+                multiSwipeStart = centroid(desktopActive.map { $0.location(in: view) })
+            }
         default:
             break
         }
     }
 
-    /// Three fingers are down: stop the pointer and any scroll, and start measuring the swipe from here.
-    private func beginThreeFinger() {
-        threeFingerActive = true
-        threeFingerFired = false
-        threeFingerStart = centroid(desktopActive.map { $0.location(in: view) })
+    /// Three (or four) fingers are down: stop the pointer and any scroll, and start measuring the swipe from here.
+    private func beginMultiSwipe() {
+        multiSwipeActive = true
+        multiSwipeFired = false
+        multiSwipeStart = centroid(desktopActive.map { $0.location(in: view) })
         // Toggling a recognizer off and on cancels whatever it was doing with these touches.
         for r in [onePan!, pad.panGestureRecognizer] where r.state == .began || r.state == .changed {
             r.isEnabled = false
             r.isEnabled = true
         }
         pad.setContentOffset(pad.contentOffset, animated: false)   // kill any scroll momentum
-        lastGesture = "3 fingers down"
+        lastGesture = "\(desktopActive.count) fingers down"
     }
 
     /// One Space per swipe, like the trackpad: fires once, then waits for the fingers to lift.
-    private func trackThreeFinger() {
-        guard !threeFingerFired else { return }
+    private func trackMultiSwipe() {
+        guard !multiSwipeFired else { return }
         let c = centroid(desktopActive.map { $0.location(in: view) })
-        let dx = c.x - threeFingerStart.x, dy = c.y - threeFingerStart.y
-        if abs(dx) >= threeFingerSwipeDistance, abs(dx) >= abs(dy) * threeFingerAxisDominance {
-            threeFingerFired = true
+        let dx = c.x - multiSwipeStart.x, dy = c.y - multiSwipeStart.y
+        let name = "\(desktopActive.count)-finger swipe"
+        if abs(dx) >= multiSwipeDistance, abs(dx) >= abs(dy) * multiSwipeAxisDominance {
+            multiSwipeFired = true
             if dx < 0 {
-                lastGesture = "3-finger swipe left: next Space"; key(KeyCode.rightArrow, [.control])
+                lastGesture = "\(name) left: next Space"; key(KeyCode.rightArrow, [.control])
             } else {
-                lastGesture = "3-finger swipe right: previous Space"; key(KeyCode.leftArrow, [.control])
+                lastGesture = "\(name) right: previous Space"; key(KeyCode.leftArrow, [.control])
             }
-        } else if abs(dy) >= threeFingerSwipeDistance, abs(dy) >= abs(dx) * threeFingerAxisDominance {
-            threeFingerFired = true
+        } else if abs(dy) >= multiSwipeDistance, abs(dy) >= abs(dx) * multiSwipeAxisDominance {
+            multiSwipeFired = true
             if dy < 0 {
-                lastGesture = "3-finger swipe up: Mission Control"; key(KeyCode.upArrow, [.control])
+                lastGesture = "\(name) up: Mission Control"; key(KeyCode.upArrow, [.control])
             } else {
-                lastGesture = "3-finger swipe down: App Exposé"; key(KeyCode.downArrow, [.control])
+                lastGesture = "\(name) down: App Exposé"; key(KeyCode.downArrow, [.control])
             }
         }
     }
@@ -1203,7 +1229,7 @@ final class TouchpadViewController: UIViewController {
     }
 
     @objc private func handleThreeFingerTap(_ g: UITapGestureRecognizer) {
-        guard !threeFingerFired, sequenceIsTap(fingers: 3, name: "3-finger tap") else { return }
+        guard !multiSwipeFired, sequenceIsTap(fingers: 3, name: "3-finger tap") else { return }
         lastGesture = "3-finger tap: look up"
         key(KeyCode.d, [.control, .command])
     }
@@ -1225,7 +1251,7 @@ final class TouchpadViewController: UIViewController {
             rateFinger += 1
             let t = g.translation(in: view)
             g.setTranslation(.zero, in: view)
-            guard !threeFingerActive else { return }
+            guard !multiSwipeActive else { return }
             if !tapDragging {
                 if fingerCircleScroll { sendCircle(fingerCircle.feed(p), source: "finger") }
                 if fingerCircle.active { return }
@@ -1284,6 +1310,7 @@ final class TouchpadViewController: UIViewController {
             return
         }
         let travel = p.x - squeezeStartX
+        squeezeMaxTravel = max(squeezeMaxTravel, abs(travel))
         guard !squeezeSwipeFired, abs(travel) >= squeezeSwipeDistance else { return }
         squeezeSwipeFired = true
         if travel < 0 {
@@ -1521,7 +1548,7 @@ final class TouchpadViewController: UIViewController {
             hint = "Pencil: hover moves · tap clicks · press and drag scrolls · double-tap and drag = drag and drop · barrel double-tap right-clicks\n" +
                    "squeeze = back · squeeze + flick left/right = Spaces · hover in circles scrolls\n" +
                    "Fingers: 1 drag moves · 1 tap clicks · tap then hold and move = drag and drop\n" +
-                   "2 drag scrolls · 2 tap right-clicks · 3 tap looks up · 3 swipe Spaces/Mission Control/Exposé\n" +
+                   "2 drag scrolls · 2 tap right-clicks · 3 tap looks up · 3 or 4 swipe Spaces/Mission Control/Exposé\n" +
                    "4 spread = desktop · 4 pinch = Launchpad · pinch zooms images and pages"
         case .league:
             hint = "Finger: drag = move pointer · tap = move cmd · firm press = attack/select · 2-tap = attack · 3-tap = summoner (M4) · 4-tap = item (M5)\n" +
@@ -1541,8 +1568,8 @@ final class TouchpadViewController: UIViewController {
 
 extension TouchpadViewController: UIScrollViewDelegate {
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-        if threeFingerActive || fingersBlocked {
-            lastGesture = "2-finger scroll blocked: " + (threeFingerActive ? "three fingers down"
+        if multiSwipeActive || fingersBlocked {
+            lastGesture = "2-finger scroll blocked: " + (multiSwipeActive ? "three or more fingers down"
                 : pencilOwnsPad ? "Pencil near" : "touch already ignored (palm or Pencil)")
             // Two of the three swipe fingers started a scroll; cancel it before it sends anything.
             pad.panGestureRecognizer.isEnabled = false
@@ -1559,7 +1586,7 @@ extension TouchpadViewController: UIScrollViewDelegate {
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard !suppressScroll, !threeFingerActive, !(fingersBlocked && scrollView.isDragging), scrollView.isDragging || scrollView.isDecelerating else { return }
+        guard !suppressScroll, !multiSwipeActive, !(fingersBlocked && scrollView.isDragging), scrollView.isDragging || scrollView.isDecelerating else { return }
         let d = CGPoint(x: scrollView.contentOffset.x - lastOffset.x, y: scrollView.contentOffset.y - lastOffset.y)
         lastOffset = scrollView.contentOffset
         guard d != .zero else { return }
@@ -1624,6 +1651,7 @@ extension TouchpadViewController: UIPencilInteractionDelegate {
             squeezeSwipeFired = false
             squeezeStartX = lastPencilPoint.x
             squeezeStartPending = hoverPoint == nil
+            squeezeMaxTravel = 0
             lastGesture = "squeeze held" + (hoverPoint == nil ? " (not hovering)" : ", move left/right to switch Space")
             return
         case .changed:
@@ -1640,7 +1668,14 @@ extension TouchpadViewController: UIPencilInteractionDelegate {
             squeezeSwipeFired = false
             // A sideways swipe during the squeeze already did its job; don't also send "back".
             if swiped { return }
-            lastGesture = "squeeze: back"
+            if mode != .desktop {
+                lastGesture = "squeeze: back"
+            } else if squeezeStartPending {
+                // No hover sample arrived for the whole squeeze, so there was nothing to measure a swipe with.
+                lastGesture = "squeeze: back (Pencil too far above the glass to see a swipe)"
+            } else {
+                lastGesture = "squeeze: back (Pencil moved \(Int(squeezeMaxTravel)) pt sideways, a swipe needs \(Int(squeezeSwipeDistance)))"
+            }
         default:
             return
         }
@@ -1664,7 +1699,7 @@ extension TouchpadViewController: UIGestureRecognizerDelegate {
         // Fingers never start anything while the Pencil owns the pad.
         if fingersBlocked, desktopRecognizers.contains(where: { $0 === g }) { return false }
         // Nothing else starts while three fingers are swiping.
-        return !(threeFingerActive && mode == .desktop && (g === onePan || g === pinch))
+        return !(multiSwipeActive && mode == .desktop && (g === onePan || g === pinch))
     }
 
     func gestureRecognizer(_ a: UIGestureRecognizer,
